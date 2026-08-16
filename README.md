@@ -1,6 +1,4 @@
-from pathlib import Path
-
-content = """# Toko — Unified Tatakai Extension
+# Toko — Unified Tatakai Extension
 
 <p align="center">
   <img src="./icon.png" width="120" alt="Toko logo">
