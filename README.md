@@ -1,30 +1,61 @@
-# Toko — Unified Tatakai Extension
-<center>
-<img src="./icon.png" height=100px width=100px> </center><br> 
-Toko is the official unified extension for the [Tatakai](https://github.com/tatakai) platform. It consolidates all anime direct-stream sources, torrent indexers, and manga chapter providers into a single installable `.kai` package.
+from pathlib import Path
 
-## Capabilities
+content = """# Toko — Unified Tatakai Extension
 
-- **Anime Stream** — 15 direct-stream providers 
-- **Torrent** — 8 torrent indexers with magnet link and torrent file support
-- **Manga** — 5 manga providers with chapter/page fetching and scanlator metadata
+<p align="center">
+  <img src="./icon.png" width="120" alt="Toko logo">
+</p>
 
+<p align="center">
+  <strong>One extension for all your Tatakai providers.</strong><br>
+  A unified <code>.kai</code> extension for anime streaming, torrent indexing, and manga providers.
+</p>
+
+<p align="center">
+  <a href="#features">Features</a> •
+  <a href="#building">Building</a> •
+  <a href="#development">Development</a> •
+  <a href="#provider-architecture">Architecture</a>
+</p>
+
+---
+
+## Features
+
+Toko is the official unified extension for the [Tatakai](https://github.com/tatakai) platform. It consolidates multiple providers into a single installable `.kai` package.
+
+| Category | Providers | Capabilities |
+|:--|:--:|:--|
+| **Anime Stream** | 15 | Direct-stream sources |
+| **Torrent** | 8 | Magnet links and torrent files |
+| **Manga** | 5 | Chapters, pages, and scanlator metadata |
+
+### Anime Streaming
+
+- 15 direct-stream providers
+- Support for single episodes
+- Optional movie support
+- Optional language information
+
+### Torrent
+
+- 8 torrent indexers
+- Magnet link support
+- Torrent file support
+- Batch searching through a unified provider interface
+
+### Manga
+
+- 5 manga providers
+- Chapter listing and retrieval
+- Page fetching
+- Scanlator metadata
+
+---
 
 ## Building
 
+Build Toko using pnpm:
+
 ```bash
 pnpm run build:toko
-# or
-npx tsx extension/toko/build.ts
-```
-
-This produces `extension/toko/dist/toko.kai` ready for installation.
-
-
-## Development
-
-Provider adapters live in `src/providers/`. Each adapter exports a typed provider interface defined in `src/types`.
-
-Stream adapters implement `StreamProvider` (required: `single()`; optional: `movie()`, `getLanguages()`).
-Torrent adapters implement `TorrentProvider` (required: `batch()`).
-Manga adapters implement `MangaProvider` (required: `getChapters()`, `getPages()`).
