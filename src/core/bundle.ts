@@ -21,6 +21,8 @@ import {
   STREAM_PROVIDERS,
   TORRENT_PROVIDERS,
   MANGA_PROVIDERS,
+  LEAD_STREAM_PROVIDERS,
+  providerPriorityOf,
 } from '../providers/registry.js';
 
 import type {
@@ -48,6 +50,28 @@ class ChapterNotFoundError extends Error {
     super(`Chapter not found: ${chapterKey}`);
     this.name = 'ChapterNotFoundError';
   }
+}
+
+/**
+ * Stamp each result with the registry rank of the provider that produced it.
+ *
+ * This is the extension stating which server should play, in a form that
+ * survives everything downstream: the host's LRU cache, the SSE stream and the
+ * app's source list all keep insertion order, and insertion order here is
+ * provider *completion* order. `providerPriority` is the only thing that still
+ * says "nebula is first" after that trip.
+ *
+ * `result.source` is the provider's own name; `providerName` is only set by
+ * providers that expose several servers, so prefer the former and fall back.
+ */
+function stampPriority(results: SourceResult[], providerName: string): SourceResult[] {
+  const fallback = providerPriorityOf(providerName);
+  return results.map(result => ({
+    ...result,
+    providerPriority: result.source
+      ? providerPriorityOf(result.source)
+      : fallback,
+  }));
 }
 
 /**
@@ -81,7 +105,7 @@ export class TokoBundleClass {
   async single(opts: SourceOptions): Promise<SourceResult[]> {
     const results = await runProviders(
       STREAM_PROVIDERS,
-      p => p.single(opts),
+      async p => stampPriority(await p.single(opts), p.name),
       undefined,
       resolveProviderRunOptions(opts.providerOptions)
     );
@@ -95,7 +119,7 @@ export class TokoBundleClass {
     const diagnostics: ProviderDiagnostic[] = [];
     const results = await runProviders(
       STREAM_PROVIDERS,
-      p => p.single(opts),
+      async p => stampPriority(await p.single(opts), p.name),
       diagnostics,
       resolveProviderRunOptions(opts.providerOptions)
     );
@@ -113,9 +137,10 @@ export class TokoBundleClass {
     const options = resolveProviderRunOptions(opts.providerOptions);
     return runProvidersProgressive(
       STREAM_PROVIDERS,
-      async p => annotateTorrentResults(await p.single(opts)),
+      async p => stampPriority(annotateTorrentResults(await p.single(opts)), p.name),
       onChunk,
-      options
+      options,
+      { lead: LEAD_STREAM_PROVIDERS, priorityOf: providerPriorityOf }
     );
   }
 
@@ -128,8 +153,8 @@ export class TokoBundleClass {
   async batch(opts: SourceOptions): Promise<SourceResult[]> {
     const options = resolveProviderRunOptions(opts.providerOptions);
     const [stream, torrent] = await Promise.all([
-      runProviders(STREAM_PROVIDERS, p => p.single(opts), undefined, options),
-      runProviders(TORRENT_PROVIDERS, p => p.batch(opts), undefined, options),
+      runProviders(STREAM_PROVIDERS, async p => stampPriority(await p.single(opts), p.name), undefined, options),
+      runProviders(TORRENT_PROVIDERS, async p => stampPriority(await p.batch(opts), p.name), undefined, options),
     ]);
     return annotateTorrentResults([...stream, ...torrent]);
   }
@@ -141,8 +166,8 @@ export class TokoBundleClass {
     const diagnostics: ProviderDiagnostic[] = [];
     const options = resolveProviderRunOptions(opts.providerOptions);
     const [stream, torrent] = await Promise.all([
-      runProviders(STREAM_PROVIDERS, p => p.single(opts), diagnostics, options),
-      runProviders(TORRENT_PROVIDERS, p => p.batch(opts), diagnostics, options),
+      runProviders(STREAM_PROVIDERS, async p => stampPriority(await p.single(opts), p.name), diagnostics, options),
+      runProviders(TORRENT_PROVIDERS, async p => stampPriority(await p.batch(opts), p.name), diagnostics, options),
     ]);
     return { results: annotateTorrentResults([...stream, ...torrent]), diagnostics };
   }
@@ -157,9 +182,10 @@ export class TokoBundleClass {
     const options = resolveProviderRunOptions(opts.providerOptions);
     return runProvidersProgressive(
       TORRENT_PROVIDERS,
-      async p => annotateTorrentResults(await p.batch(opts)),
+      async p => stampPriority(annotateTorrentResults(await p.batch(opts)), p.name),
       onChunk,
-      options
+      options,
+      { priorityOf: providerPriorityOf }
     );
   }
 
@@ -174,18 +200,103 @@ export class TokoBundleClass {
     const [streamResults, torrentResults] = await Promise.all([
       runProvidersProgressive(
         STREAM_PROVIDERS,
-        async p => annotateTorrentResults(await p.single(opts)),
+        async p => stampPriority(annotateTorrentResults(await p.single(opts)), p.name),
         onChunk,
-        options
+        options,
+        // Nebula's sources reach the app before any other provider's, so the
+        // watch page opens on it rather than on whichever site happened to be
+        // quickest. Bounded: a slow or dead nebula just loses the head start.
+        { lead: LEAD_STREAM_PROVIDERS, priorityOf: providerPriorityOf }
       ),
       runProvidersProgressive(
         TORRENT_PROVIDERS,
-        async p => annotateTorrentResults(await p.batch(opts)),
+        async p => stampPriority(annotateTorrentResults(await p.batch(opts)), p.name),
         onChunk,
-        options
+        options,
+        { priorityOf: providerPriorityOf }
       ),
     ]);
     return [...streamResults, ...torrentResults];
+  }
+
+  // ── Per-provider introspection & execution ──────────────────────────────
+  //
+  // The aggregate calls above run every provider behind one request, which makes
+  // a single misbehaving provider indistinguishable from a slow one. These two
+  // methods are the debugging/scalability counterpart the host mounts as
+  // `/providers` and `/providers/<name>`: one provider, one API call, one
+  // diagnostic. Any extension implementing this pair gets the same endpoints —
+  // nothing here is Toko-specific beyond the registry it reads.
+
+  /**
+   * Every provider this bundle can run, with the kind of call it answers.
+   * `kind` tells the caller which entry point a provider uses: stream providers
+   * resolve one episode (`single`), torrent providers query an indexer (`batch`).
+   */
+  listProviders(): Array<{ name: string; kind: 'stream' | 'torrent' | 'manga'; priority: number }> {
+    return [
+      ...STREAM_PROVIDERS.map(p => ({ name: p.name, kind: 'stream' as const, priority: providerPriorityOf(p.name) })),
+      ...TORRENT_PROVIDERS.map(p => ({ name: p.name, kind: 'torrent' as const, priority: providerPriorityOf(p.name) })),
+      ...MANGA_PROVIDERS.map((p, i) => ({ name: p.name, kind: 'manga' as const, priority: i })),
+    ];
+  }
+
+  /**
+   * Runs exactly one provider by name, with the same timeout/retry policy the
+   * aggregate calls use, and returns its diagnostic alongside the results.
+   * Manga providers are rejected — they answer a different contract.
+   *
+   * @throws Error when `providerName` matches no stream/torrent provider.
+   */
+  async runProvider(
+    providerName: string,
+    opts: SourceOptions
+  ): Promise<ProviderChunk<SourceResult> & { kind: 'stream' | 'torrent' }> {
+    const wanted = String(providerName || '').trim().toLowerCase();
+    if (!wanted) throw new Error('provider name is required');
+
+    const options = resolveProviderRunOptions(opts.providerOptions);
+    const stream = STREAM_PROVIDERS.find(p => p.name.toLowerCase() === wanted);
+    const torrent = stream ? undefined : TORRENT_PROVIDERS.find(p => p.name.toLowerCase() === wanted);
+
+    if (!stream && !torrent) {
+      throw new Error(`unknown provider: ${providerName}`);
+    }
+
+    let chunk: ProviderChunk<SourceResult> | undefined;
+    const capture = (c: ProviderChunk<SourceResult>) => { chunk = c; };
+
+    if (stream) {
+      await runProvidersProgressive(
+        [stream],
+        async p => stampPriority(annotateTorrentResults(await p.single(opts)), p.name),
+        capture,
+        options,
+        { priorityOf: providerPriorityOf }
+      );
+    } else {
+      await runProvidersProgressive(
+        [torrent!],
+        async p => stampPriority(annotateTorrentResults(await p.batch(opts)), p.name),
+        capture,
+        options,
+        { priorityOf: providerPriorityOf }
+      );
+    }
+
+    const name = (stream || torrent)!.name;
+    return {
+      provider: name,
+      kind: stream ? 'stream' : 'torrent',
+      results: chunk?.results ?? [],
+      diagnostic: chunk?.diagnostic ?? {
+        provider: name,
+        status: 'empty',
+        durationMs: 0,
+        resultCount: 0,
+        attempts: 0,
+      },
+    };
   }
 
   // ── Movie Sources ───────────────────────────────────────────────────────

@@ -66,6 +66,16 @@ export interface SourceResult {
   providerName?: string;
   providerKey?: string;
   server?: string;
+  /**
+   * Rank of the producing provider, lowest first — the extension's own
+   * statement of which server should play.
+   *
+   * Set from the registry index (`providerPriorityOf`), not from the order
+   * results happened to arrive in: the progressive runner emits chunks as
+   * providers *complete*, so arrival order is whichever site was quickest that
+   * minute. Consumers sort by this to get the registry's intended order back.
+   */
+  providerPriority?: number;
   /** Torrent metadata — only set when sourceType === 'torrent' */
   seeders?: number;
   leechers?: number;

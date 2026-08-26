@@ -190,6 +190,7 @@ function extractStreams(html: string, pageUrl: string): SourceResult[] {
 
 const provider: StreamProvider = {
   name: '4anime',
+  sites: BASES,
   async single(opts: SourceOptions): Promise<SourceResult[]> {
     try {
       const targetEp = opts.episode ?? 1;

@@ -167,6 +167,7 @@ async function getStream(episodeId: string): Promise<string | null> {
 
 const provider: StreamProvider = {
   name: 'animeheaven',
+  sites: [BASE],
 
   async single(opts: SourceOptions): Promise<SourceResult[]> {
     const targetEp = opts.episode ?? 1;

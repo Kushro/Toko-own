@@ -34,6 +34,7 @@ async function search(title: string): Promise<{ slug: string } | null> {
 
 const provider: MangaProvider = {
   name: PROVIDER_NAME,
+  sites: [BASE],
 
   async getChapters(params: MangaChapterParams): Promise<MangaChapterEntry[]> {
     try {

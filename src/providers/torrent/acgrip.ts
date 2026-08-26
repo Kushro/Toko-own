@@ -7,8 +7,11 @@ import { fetchResponse } from '../../utils/http/fetch.js';
 import { scoreEpisodeMatch, isBatchTitle } from '../../utils/torrent/matcher.js';
 import { buildSearchQueries } from '../../utils/scraping/title-normalizer.js';
 
+const BASE = 'https://acg.rip';
+
 const provider: TorrentProvider = {
   name: 'acgrip',
+  sites: [BASE],
   async batch(opts: SourceOptions): Promise<SourceResult[]> {
     const titles = opts.titles ?? [];
     const ep = opts.episode ?? 0;
@@ -21,7 +24,7 @@ const provider: TorrentProvider = {
     const rssAttempts = await Promise.allSettled(
       buildSearchQueries(titles).map(async (title) => {
         const qStr = ep > 0 ? `${title}${epStr}` : title;
-        const url = `https://acg.rip/.rss?term=${encodeURIComponent(qStr)}`;
+        const url = `${BASE}/.rss?term=${encodeURIComponent(qStr)}`;
         const res = await fetchResponse(url, {
           headers: {
             'User-Agent': UA,

@@ -46,14 +46,17 @@ function normalizeTitle(title: string): string {
     .trim();
 }
 
+const BASE = 'https://subsplease.org';
+
 const provider: TorrentProvider = {
   name: 'subplease',
+  sites: [BASE],
   async batch(opts: SourceOptions): Promise<SourceResult[]> {
     const title = opts.titles[0] ?? '';
     const ep = opts.episode ?? 0;
     if (!title) return [];
 
-    const url = `https://subsplease.org/api/?f=search&tz=UTC&s=${encodeURIComponent(title)}`;
+    const url = `${BASE}/api/?f=search&tz=UTC&s=${encodeURIComponent(title)}`;
 
     let res: Response;
     try {

@@ -275,6 +275,7 @@ function scoreServer(server: RawServer, resolved: string): number {
 
 export const animelok: StreamProvider = {
   name: 'animelok',
+  sites: [BASE],
 
   async single(opts: SourceOptions): Promise<SourceResult[]> {
     const ep = opts.episode ?? 1;

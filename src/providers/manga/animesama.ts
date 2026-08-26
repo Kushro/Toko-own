@@ -12,6 +12,7 @@ const BASE_URL = 'https://anime-sama.fr';
 
 const provider: MangaProvider = {
   name: PROVIDER_NAME,
+  sites: [BASE_URL],
 
   async getChapters(params: MangaChapterParams): Promise<MangaChapterEntry[]> {
     const q = encodeURIComponent(params.title ?? '');

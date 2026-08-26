@@ -74,6 +74,7 @@ async function fetchFlix(anilistId: number, episode: number): Promise<FlixServer
 
 const provider: StreamProvider = {
   name: 'reanime',
+  sites: [BASE_URL, ALT_BASE_URL],
 
   async single(opts: SourceOptions): Promise<SourceResult[]> {
     const anilistId = opts.anilistId;

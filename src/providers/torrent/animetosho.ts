@@ -30,8 +30,11 @@ function matchesEpisode(title: string, ep: number): boolean {
   return scoreEpisodeMatch(title, ep) > 0;
 }
 
+const BASE = 'https://feed.animetosho.org';
+
 const provider: TorrentProvider = {
   name: 'animetosho',
+  sites: [BASE],
   async batch(opts: SourceOptions): Promise<SourceResult[]> {
     const titles = opts.titles ?? [];
     const ep = opts.episode ?? 0;
@@ -40,7 +43,7 @@ const provider: TorrentProvider = {
     const epStr = ep > 0 ? ` ${String(ep).padStart(2, '0')}` : '';
 
     async function fetchItems(qStr: string): Promise<AnimeToshoItem[]> {
-      const url = `https://feed.animetosho.org/json?q=${encodeURIComponent(qStr)}`;
+      const url = `${BASE}/json?q=${encodeURIComponent(qStr)}`;
       try {
         const res = await fetchResponse(url, {
           timeoutMs: 6000,

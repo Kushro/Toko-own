@@ -29,6 +29,8 @@ export type {
   StreamProvider,
   TorrentProvider,
   MangaProvider,
+  ProviderSites,
+  ProviderHealth,
   ProviderDiagnostic,
   ProviderChunk,
   DebugProviderResult,

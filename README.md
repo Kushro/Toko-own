@@ -20,7 +20,7 @@
 
 ## Features
 
-Toko is the official unified extension for the [Tatakai](https://github.com/tatakai) platform. It consolidates multiple providers into a single installable `.kai` package.
+Toko is the official unified extension for the [Tatakai](https://github.com/snozxyx/tatakai) platform. It consolidates multiple providers into a single installable `.kai` package.
 
 | Category | Providers | Capabilities |
 |:--|:--:|:--|

@@ -19,7 +19,23 @@ const MAGNET_TRACKERS = [
   'udp://tracker.torrent.eu.org:451/announce',
 ].map(t => `&tr=${encodeURIComponent(t)}`).join('');
 
-const VIDEO_FORMATS = ['mkv', 'mp4', 'webm', 'avi', 'mov', 'm4v'] as const;
+/**
+ * Playable containers. Kept in sync with `PLAYABLE_VIDEO_EXTENSIONS` in
+ * `desktop/runtime/torrent/session/session-manager.cjs` — the streaming engine
+ * happily plays all of these, so the UI tag should not pretend only mkv/mp4
+ * exist.
+ */
+const VIDEO_FORMATS = [
+  'mkv', 'mp4', 'webm', 'avi', 'mov', 'm4v',
+  'ts', 'flv', 'wmv', 'mpg', 'mpeg', 'ogv',
+] as const;
+
+/**
+ * Containers too ambiguous to detect from a mid-name token. In release names
+ * "TS" almost always means Telesync (a rip source), not an MPEG-TS container,
+ * so it is only honoured as a trailing extension.
+ */
+const AMBIGUOUS_MID_NAME_FORMATS = new Set<string>(['ts']);
 
 export type DetectedTorrentFileFormat = typeof VIDEO_FORMATS[number] | 'video';
 
@@ -38,6 +54,10 @@ export function buildMagnet(infoHash: string, displayName: string): string {
  * indexer does not expose an individual filename.
  */
 export function inferTorrentFileFormat(...values: Array<string | null | undefined>): DetectedTorrentFileFormat {
+  const isVideoFormat = (candidate: string): candidate is DetectedTorrentFileFormat =>
+    (VIDEO_FORMATS as readonly string[]).includes(candidate);
+
+  const texts: string[] = [];
   for (const value of values) {
     if (!value) continue;
     let text = value;
@@ -45,11 +65,26 @@ export function inferTorrentFileFormat(...values: Array<string | null | undefine
     if (dn) {
       try { text = decodeURIComponent(dn.replace(/\+/g, ' ')); } catch { text = dn; }
     }
+    texts.push(text);
+  }
+
+  // Pass 1 — a trailing extension is the strongest signal, so every container is
+  // trusted here, including the mid-name-ambiguous ones.
+  for (const text of texts) {
     const format = text.match(/\.([a-z0-9]{2,5})(?:$|[?#&\s\]})])/i)?.[1]?.toLowerCase();
-    if (format && (VIDEO_FORMATS as readonly string[]).includes(format)) {
-      return format as DetectedTorrentFileFormat;
+    if (format && isVideoFormat(format)) return format;
+  }
+
+  // Pass 2 — indexers routinely omit the filename and tag the container in the
+  // release name instead ("… [1080p][x265][MKV]", "Show.S01.AVI-Group"), which
+  // the trailing-extension match alone can never see.
+  for (const text of texts) {
+    for (const token of text.toLowerCase().split(/[^a-z0-9]+/)) {
+      if (!token || AMBIGUOUS_MID_NAME_FORMATS.has(token)) continue;
+      if (isVideoFormat(token)) return token;
     }
   }
+
   return 'video';
 }
 

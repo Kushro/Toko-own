@@ -21,7 +21,9 @@ import type { StreamProvider, SourceOptions, SourceResult } from '../../types/in
 import { fetchTextWithBypass } from '../../utils/common/fetch-bypass.js';
 import { loadHtml } from '../../utils/http/fetch.js';
 
-const BASES = ['https://mkissa.to', 'https://mkissa.com'];
+// `mkissa.com` is a parked domain that accepts the connection and never answers,
+// so every attempt against it costs the full 12s timeout. Only `.to` is live.
+const BASES = ['https://mkissa.to'];
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36';
 
 const HEADERS = {
@@ -55,7 +57,11 @@ interface Candidate {
 
 async function searchAnime(titles: string[]): Promise<Candidate | null> {
   for (const base of BASES) {
-    for (const query of buildSearchQueries(titles)) {
+    // Two queries, as everywhere else. Unbounded, this loop ran
+    // bases × titles × 2 URLs attempts at up to 12s each and reliably burned the
+    // provider's whole 15-20s deadline before reaching the episode lookup, so
+    // mkissa reported `timeout` on every show instead of a result.
+    for (const query of buildSearchQueries(titles).slice(0, 2)) {
       // mkissa.to SPA search
       const searchUrls = [
         `${base}/search/anime?q=${encodeURIComponent(query)}`,
@@ -174,6 +180,7 @@ function extractSourcesFromHtml(html: string, epUrl: string): SourceResult[] {
 
 const provider: StreamProvider = {
   name: 'mkissa',
+  sites: BASES,
 
   async single(opts: SourceOptions): Promise<SourceResult[]> {
     try {

@@ -351,6 +351,7 @@ async function extractDirectFromWatchPage(slug: string, base: string, ep: number
 
 const provider: StreamProvider = {
   name: 'anikoto',
+  sites: BASES,
 
   async single(opts: SourceOptions): Promise<SourceResult[]> {
     const targetEp = opts.episode ?? 1;

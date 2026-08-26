@@ -71,6 +71,7 @@ async function fetchChapterList(mangaId: string): Promise<MangaChapterEntry[]> {
 
 const provider: MangaProvider = {
   name: PROVIDER_NAME,
+  sites: [BASE],
 
   async getChapters(params: MangaChapterParams): Promise<MangaChapterEntry[]> {
     try {

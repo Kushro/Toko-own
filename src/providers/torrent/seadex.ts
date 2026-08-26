@@ -87,6 +87,7 @@ function torrentDisplayName(record: TorrentRecord, seriesTitle: string): string 
 
 const provider: TorrentProvider = {
   name: 'seadex',
+  sites: [BASE],
 
   async batch(opts: SourceOptions): Promise<SourceResult[]> {
     const seriesTitle = opts.titles[0] ?? 'Anime';

@@ -229,6 +229,7 @@ async function extractMp4UploadSources(watchUrl: string, episode: number): Promi
 
 const provider: StreamProvider = {
   name: 'animeya',
+  sites: [BASE_URL, VIDNEST_BASE],
   async single(opts: SourceOptions): Promise<SourceResult[]> {
     try {
       const targetEp = opts.episode ?? 1;

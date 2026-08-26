@@ -424,6 +424,8 @@ async function findSeriesSlug(titles: string[]): Promise<{ slug: string; base: s
 
 const provider: StreamProvider = {
   name: 'toonstream',
+  // MIRRORS already leads with PRIMARY, so this is the full rotation in order.
+  sites: MIRRORS,
   async single(opts: SourceOptions): Promise<SourceResult[]> {
     try {
       const ep = opts.episode ?? 1;

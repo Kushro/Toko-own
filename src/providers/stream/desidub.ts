@@ -114,6 +114,7 @@ async function findSources(titles: string[], epNumber: number): Promise<SourceRe
 
 const provider: StreamProvider = {
   name: 'desidub',
+  sites: [BASE_URL],
   async single(opts: SourceOptions): Promise<SourceResult[]> {
     try {
       return findSources(opts.titles, opts.episode ?? 1);

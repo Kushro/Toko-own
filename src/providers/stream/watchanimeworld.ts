@@ -42,6 +42,25 @@ export function decodePlayer1Payload(raw: string): string {
   return atob(padded);
 }
 
+/**
+ * Circuit breaker for the whole mirror set.
+ *
+ * Every `BASES` entry is currently dead — `.top`/`.net` no longer resolve and
+ * `.com`/`.in` accept the connection and never answer — so each `tryBases` call
+ * costs the full 3s abort with no chance of success. `findAnimeSlug` makes one
+ * per (query × search path), which reliably exhausted the provider's 20s budget
+ * and reported `timeout` instead of `empty`. A timeout is far more expensive
+ * than an empty result: it holds a slot in the runner's concurrency pool for the
+ * entire deadline, delaying providers that do work.
+ *
+ * So after two consecutive all-bases-unreachable rounds, stop trying for a
+ * while. If a mirror comes back the breaker reopens on the next TTL expiry.
+ */
+const BREAKER_TTL_MS = 5 * 60 * 1000;
+const BREAKER_THRESHOLD = 2;
+let consecutiveFailures = 0;
+let breakerOpenUntil = 0;
+
 async function fetchHtml(url: string): Promise<string | null> {
   try {
     const res = await fetchResponse(url, {
@@ -55,6 +74,8 @@ async function fetchHtml(url: string): Promise<string | null> {
 }
 
 async function tryBases(path: string): Promise<{ html: string; base: string } | null> {
+  if (Date.now() < breakerOpenUntil) return null;
+
   // Try all bases in parallel, return first success
   const results = await Promise.all(
     BASES.map(async (base) => {
@@ -62,7 +83,15 @@ async function tryBases(path: string): Promise<{ html: string; base: string } | 
       return html ? { html, base } : null;
     })
   );
-  return results.find(r => r !== null) ?? null;
+  const hit = results.find(r => r !== null) ?? null;
+
+  if (hit) {
+    consecutiveFailures = 0;
+  } else if (++consecutiveFailures >= BREAKER_THRESHOLD) {
+    breakerOpenUntil = Date.now() + BREAKER_TTL_MS;
+    consecutiveFailures = 0;
+  }
+  return hit;
 }
 
 function slugify(title: string): string {
@@ -150,19 +179,44 @@ function extractSources(html: string, pageUrl: string, base: string): SourceResu
     return out;
   }
 
-  // iframes — skip zephyrix wrapper when player1 data is present elsewhere.
+  // iframes — skip analytics, captchas and the zephyr* wrapper (see
+  // SKIP_IFRAME_HOSTS: the wrapper never plays anything and its current
+  // hostname does not resolve).
   const $ = loadHtml(html);
   $.find('iframe[src], iframe[data-src]').each((_: number, el: any) => {
     const src: string = el.attr?.('src') ?? el.attr?.('data-src') ?? '';
-    if (!src || /googletagmanager|recaptcha|play\.zephyrix\.top/i.test(src)) return;
+    if (isSkippableIframe(src)) return;
     out.push({ source: 'watchanimeworld', url: src, quality: normalizeQuality(''), headers, subtitles: [], sourceType: detectSourceType(src) });
   });
 
   return out;
 }
 
+/**
+ * Iframe hosts that are never a playable source.
+ *
+ * The `zephyr*` family is WAW's own wrapper: it does not play anything itself,
+ * it re-frames whatever `player1.php` already gave us. The old filter named
+ * only `play.zephyrix.top`, so when the wrapper was renamed to
+ * `play.zephyrflick.top` it started leaking through as a "source" — and that
+ * host does not resolve at all (NXDOMAIN), which is where
+ * `[EmbedPlayer] play.zephyrflick.top is not answering (fetch failed) — failing
+ * over` came from. Match the family rather than one hostname so the next rename
+ * is already covered.
+ */
+const SKIP_IFRAME_HOSTS = /googletagmanager|recaptcha|doubleclick|histats|zephyr[a-z0-9-]*\./i;
+
+/** True for an iframe src that is analytics, a captcha, or a known wrapper. */
+function isSkippableIframe(src: string): boolean {
+  if (!src) return true;
+  if (SKIP_IFRAME_HOSTS.test(src)) return true;
+  // about:blank / javascript: placeholders that some themes ship.
+  return /^(?:about:|javascript:|data:)/i.test(src.trim());
+}
+
 const provider: StreamProvider = {
   name: 'watchanimeworld',
+  sites: BASES,
   async single(opts: SourceOptions): Promise<SourceResult[]> {
     try {
       const ep = opts.episode ?? 1;

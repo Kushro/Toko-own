@@ -9,8 +9,11 @@ import type { TorrentProvider, SourceOptions, SourceResult } from '../../types/i
 import { fetchResponse, loadHtml } from '../../utils/http/fetch.js';
 import { scoreEpisodeMatch, isBatchTitle } from '../../utils/torrent/matcher.js';
 
+const BASES = ['https://aniliberty.top', 'https://aniliberty.moe', 'https://anilib.top'];
+
 const provider: TorrentProvider = {
   name: 'aniliberty',
+  sites: BASES,
   async batch(opts: SourceOptions): Promise<SourceResult[]> {
     const title = opts.titles[0] ?? '';
     const ep = opts.episode ?? 0;
@@ -18,12 +21,11 @@ const provider: TorrentProvider = {
 
     const epPad = ep > 0 ? String(ep).padStart(2, '0') : '';
     const query = encodeURIComponent(`${title} ${epPad}`.trim());
-    const domains = ['https://aniliberty.top', 'https://aniliberty.moe', 'https://anilib.top'];
 
     let html = '';
     const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36';
 
-    for (const domain of domains) {
+    for (const domain of BASES) {
       try {
         const res = await fetchResponse(`${domain}/search?q=${query}`, {
           headers: { 'User-Agent': UA },

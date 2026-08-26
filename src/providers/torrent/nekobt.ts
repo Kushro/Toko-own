@@ -14,8 +14,11 @@ function formatSize(bytes?: number): string {
   return `${(bytes / 1e3).toFixed(0)} KB`;
 }
 
+const BASE = 'https://nekobt.to';
+
 const provider: TorrentProvider = {
   name: 'nekobt',
+  sites: [BASE],
   async batch(opts: SourceOptions): Promise<SourceResult[]> {
     const titles = opts.titles ?? [];
     const ep = opts.episode ?? 0;
@@ -27,7 +30,7 @@ const provider: TorrentProvider = {
     let xml = '';
     for (const title of buildSearchQueries(titles)) {
       const qStr = ep > 0 ? `${title} ${epPad}` : title;
-      const url = `https://nekobt.to/api/torznab/api?t=search&q=${encodeURIComponent(qStr)}`;
+      const url = `${BASE}/api/torznab/api?t=search&q=${encodeURIComponent(qStr)}`;
       try {
         const res = await fetchResponse(url, {
           headers: { 'User-Agent': UA },

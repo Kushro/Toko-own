@@ -20,11 +20,12 @@ const MAGNET_TRACKERS = [
   'udp://tracker.torrent.eu.org:451/announce',
 ].map(t => `&tr=${encodeURIComponent(t)}`).join('');
 
+const BASES = ['https://nyaa.si', 'https://nyaa.land'];
+
 async function fetchRssItems(query: string): Promise<string[]> {
-  const endpoints = [
-    `https://nyaa.si/?page=rss&q=${encodeURIComponent(query)}&c=1_0&f=0`,
-    `https://nyaa.land/?page=rss&q=${encodeURIComponent(query)}&c=1_0&f=0`,
-  ];
+  const endpoints = BASES.map(
+    (base) => `${base}/?page=rss&q=${encodeURIComponent(query)}&c=1_0&f=0`,
+  );
   for (const url of endpoints) {
     try {
       const res = await fetchResponse(url, {
@@ -42,6 +43,7 @@ async function fetchRssItems(query: string): Promise<string[]> {
 
 const provider: TorrentProvider = {
   name: 'nyaa',
+  sites: BASES,
   async batch(opts: SourceOptions): Promise<SourceResult[]> {
     const animeTitle = opts.titles[0] ?? '';
     const ep = opts.episode ?? 0;

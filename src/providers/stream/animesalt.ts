@@ -263,6 +263,7 @@ function extractStreams(html: string, pageUrl: string): SourceResult[] {
 
 const provider: StreamProvider = {
   name: 'animesalt',
+  sites: BASES,
 
   async single(opts: SourceOptions): Promise<SourceResult[]> {
     try {

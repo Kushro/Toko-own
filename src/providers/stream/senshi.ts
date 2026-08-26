@@ -72,6 +72,7 @@ function resolveLanguage(status: string): { audioLanguage: string; language: str
 
 const provider: StreamProvider = {
   name: 'senshi',
+  sites: [BASE_URL],
   async single(opts: SourceOptions): Promise<SourceResult[]> {
     const title = opts.titles[0] ?? '';
     // Guard: skip if title is empty — avoids useless search + 502 spam

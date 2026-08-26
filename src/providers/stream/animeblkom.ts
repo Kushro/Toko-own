@@ -133,6 +133,7 @@ function extractServerSources(html: string, pageUrl: string): RawDubSource[] {
 
 export class AnimeblkomProvider extends BaseI18nProvider {
   readonly name = 'animeblkom';
+  readonly sites = [BASE];
   readonly meta = {
     name: 'Animeblkom',
     languages: ['ar'],

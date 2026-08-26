@@ -7,7 +7,28 @@ import { fetchResponse } from '../../utils/http/fetch.js';
 // animepahe.com now 30x-redirects to a rotating mirror (animepahe.pw, .ru, .ac).
 // The extension worker follows redirects but some mirrors reject requests
 // without a browser UA, so we try the canonical domain first then mirrors.
-const BASE_URLS = ['https://animepahe.ru', 'https://animepahe.is', 'https://animepahe.org', 'https://animepahe.pw', 'https://animepahe.io', 'https://animepahe.com'];
+// `.su` is the mirror `.ru` currently redirects to; it is listed so the provider
+// recovers on its own if the DDoS-Guard interstitial there is ever lifted.
+const BASE_URLS = ['https://animepahe.ru', 'https://animepahe.su', 'https://animepahe.is', 'https://animepahe.org', 'https://animepahe.pw', 'https://animepahe.io', 'https://animepahe.com'];
+
+/**
+ * Circuit breaker for the whole mirror set — same reasoning as watchanimeworld.
+ *
+ * Measured: every mirror is unusable. `.ru` 301s to `animepahe.su`, and `.su`
+ * answers `/api?m=search` with a DDoS-Guard JS challenge rather than JSON, so no
+ * base can return a result no matter what we ask for. Each `apiGetJson` round
+ * still costs the full 4s abort, and `single()` ran one per search query, which
+ * exhausted the provider's 15s budget and reported `timeout`.
+ *
+ * A timeout costs far more than an empty result: it holds a slot in the runner's
+ * concurrency pool for the entire deadline, delaying providers that do work. So
+ * after two consecutive all-mirrors-failed rounds, stop trying for a while; the
+ * breaker reopens on the next TTL expiry in case a mirror comes back.
+ */
+const BREAKER_TTL_MS = 5 * 60 * 1000;
+const BREAKER_THRESHOLD = 2;
+let consecutiveFailures = 0;
+let breakerOpenUntil = 0;
 
 interface AnimePaheSearchItem {
   session: string;
@@ -49,6 +70,8 @@ function headersFor(base: string, path = '/'): Record<string, string> {
  * provider resilient without forcing the worker to chase redirects.
  */
 async function apiGetJson<T>(path: string): Promise<T | null> {
+  if (Date.now() < breakerOpenUntil) return null;
+
   const settled = await Promise.allSettled(
     BASE_URLS.map(async (base) => {
       const res = await fetchResponse(`${base}${path}`, {
@@ -62,7 +85,14 @@ async function apiGetJson<T>(path: string): Promise<T | null> {
     }),
   );
   for (const attempt of settled) {
-    if (attempt.status === 'fulfilled') return attempt.value;
+    if (attempt.status === 'fulfilled') {
+      consecutiveFailures = 0;
+      return attempt.value;
+    }
+  }
+  if (++consecutiveFailures >= BREAKER_THRESHOLD) {
+    breakerOpenUntil = Date.now() + BREAKER_TTL_MS;
+    consecutiveFailures = 0;
   }
   return null;
 }
@@ -203,10 +233,13 @@ async function extractDirectKwikStream(kwikUrl: string): Promise<string | null> 
 
 const provider: StreamProvider = {
   name: 'animepahe',
+  sites: BASE_URLS,
   async single(opts: SourceOptions): Promise<SourceResult[]> {
     try {
       const targetEp = opts.episode ?? 1;
-      const queries = buildSearchQueries(opts.titles);
+      // Two queries, as everywhere else. Unbounded, this loop cost one 4s
+      // all-mirrors round per title and blew the provider's whole deadline.
+      const queries = buildSearchQueries(opts.titles).slice(0, 2);
 
       for (const query of queries) {
         // 1. Search
