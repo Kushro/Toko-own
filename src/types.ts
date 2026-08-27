@@ -39,7 +39,7 @@ export interface ProviderRunOptions {
 }
 
 /** Video container inferred from a torrent release name or its file list. */
-export type TorrentFileFormat = 'mkv' | 'mp4' | 'webm' | 'avi' | 'mov' | 'm4v' | 'video';
+export type TorrentFileFormat = 'mkv' | 'mp4' | 'webm' | 'avi' | 'mov' | 'm4v' | 'ts' | 'flv' | 'wmv' | 'mpg' | 'mpeg' | 'ogv' | 'video';
 
 export interface SubtitleTrack {
   url: string;

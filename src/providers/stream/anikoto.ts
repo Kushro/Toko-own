@@ -169,7 +169,7 @@ async function getEpisodeRefs(animeId: number, base: string): Promise<EpisodeRef
     const $el = $(el);
     const ids: string = ($el.attr('data-ids') ?? '').replace(/^['"]|['"]$/g, '');
     const numRaw = $el.attr('data-num') ?? $el.attr('data-episode-number');
-    const num = parseInt(numRaw, 10);
+    const num = parseInt(numRaw ?? '', 10);
     if (ids && Number.isFinite(num) && num > 0) episodes.push({ number: num, ids });
   });
   return episodes;

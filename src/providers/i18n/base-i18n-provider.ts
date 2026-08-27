@@ -14,7 +14,7 @@ declare const __tatakai_fetch__: (url: string, init?: RequestInit) => Promise<Re
 declare const __tatakai_parse_html__: (html: string) => any;
 
 import type { StreamProvider, SourceOptions, SourceResult, SubtitleTrack } from '../../types.js';
-import { detectSourceType } from '../../utils/quality.js';
+import { detectSourceType } from '../../utils/scraping/quality.js';
 import { toAudioLanguageCode, type DubLanguage, DUB_LANGUAGES } from './dub-languages.js';
 
 export interface RawDubSource {

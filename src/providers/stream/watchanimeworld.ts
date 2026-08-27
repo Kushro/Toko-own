@@ -139,7 +139,7 @@ function extractSources(html: string, pageUrl: string, base: string): SourceResu
   // WAW primary: base64-encoded player1.php server list (often on data-src, not src).
   const player1DataMatch = html.match(/player1\.php\?data=([^"'\s&]+)/i);
   const player1Match = player1DataMatch
-    ? [null, null, player1DataMatch[1]] as RegExpMatchArray
+    ? [null, null, player1DataMatch[1]] as unknown as RegExpMatchArray
     : html.match(/iframe[^>]+(?:src|data-src)=["']([^"']*\/api\/player1\.php\?data=([^"']+))["']/i);
   if (player1Match?.[2]) {
     try {
