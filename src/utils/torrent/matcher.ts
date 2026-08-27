@@ -122,8 +122,8 @@ export function parseEpisodeFromTitle(title: string): EpisodeInfo {
     };
   }
 
-  // Episode range — e.g. "01-12", "01~24"
-  const range = name.match(/\b(\d{2,3})\s*[-~]\s*(\d{2,3})\b/);
+  // Episode range — e.g. "01-12", "1-28", "01~24"
+  const range = name.match(/\b(\d{1,3})\s*[-~]\s*(\d{2,3})\b/);
   if (range) {
     const a = parseInt(range[1], 10);
     const b = parseInt(range[2], 10);
@@ -168,8 +168,8 @@ export function isBatchTitle(title: string): boolean {
   if (/\bcomplete\b/i.test(title)) return true;
   if (/\bseries\b/i.test(title)) return true;
   if (/\bseason\s*\d+\s*[-~]\s*\d+/i.test(title)) return true;
-  // Large episode range (50+ eps)
-  const range = title.match(/\b(\d{2,3})\s*[-~]\s*(\d{2,3})\b/);
+  // Large episode range (50+ eps); 1-digit starts included ("[1-28]")
+  const range = title.match(/\b(\d{1,3})\s*[-~]\s*(\d{2,3})\b/);
   if (range) {
     const diff = parseInt(range[2], 10) - parseInt(range[1], 10);
     if (diff >= 5) return true;  // 5+ ep range = batch

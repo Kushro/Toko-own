@@ -150,8 +150,9 @@ async function testRegistry(): Promise<void> {
   const { STREAM_PROVIDERS } = await import('../src/providers/registry.js');
   const names = STREAM_PROVIDERS.map((p) => p.name);
 
-  check('15 stream providers', STREAM_PROVIDERS.length === 15, `got ${STREAM_PROVIDERS.length}: ${names.join(', ')}`);
-  check('dead providers removed', !names.includes('senshi') && !names.includes('watchanimeworld') && !names.includes('mkissa'));
+  check('16 stream providers', STREAM_PROVIDERS.length === 16, `got ${STREAM_PROVIDERS.length}: ${names.join(', ')}`);
+  check('dead providers removed', !names.includes('senshi') && !names.includes('mkissa'));
+  check('watchanimeworld restored on .one', names.includes('watchanimeworld'));
   check('moviebox registered', names.includes('moviebox'));
   check('nebula still leads', names[0] === 'nebula');
   check('every provider exposes single()', STREAM_PROVIDERS.every((p) => typeof p.single === 'function'));

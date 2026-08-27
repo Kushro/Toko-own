@@ -24,9 +24,25 @@ scraper code path verified against the live markup.
 | **animeblkom** | animeblkom.net | ✅ working | Site live (Arabic catalog). Search/watch-page scraping is best-effort against a JS-heavy site. |
 | **desidub** | desidubanime.me | ✅ working | WP REST search verified live (`/wp-json/wp/v2/anime?search=…`). Base64-embed extraction unchanged. |
 | **moviebox** | moviebox.ph (h5-api.aoneroom.com) | ➕ added | Ported from [walterwhite-69/Moviebox-API](https://github.com/walterwhite-69/Moviebox-API). API verified live: `home` (guest JWT via `x-user`), `media-player/get-domain` → `netfilm.world`, `subject/play` endpoint answers (streams unlock requires the JWT + player Referer, ported as in the reference). Direct MP4 (per-resolution) + HLS + captions; watch-page embed fallback when no resource. Covers movies (`movie()`) and TV (`single()`). |
-| ~~watchanimeworld~~ | watchanimeworld.com/.top/.net | ❌ removed | `.com`/`.in` accept connections and never answer; `.top`/`.net` no longer resolve. Successor `watchanimeworld.one` (verified via redirect) Cloudflare-blocks non-browser clients. No output possible → removed. |
+| **watchanimeworld** | watchanimeworld.one | ♻️ restored | Round 2: rebuilt for the successor domain `watchanimeworld.one` per maintainer direction. Original `.com`/`.top`/`.net` hosts are dead; `.one` is Cloudflare-fronted (challenge pages detected and treated as misses, circuit breaker reworked). Same WordPress structure (`/?s=`, `/series/{slug}/`, `/episode/{slug}-{s}x{e}/`) and `player1.php` base64 server-list extraction (Hindi/Tamil/Telugu dubs). Live flow not machine-verifiable from the sandbox (CF gate) — extraction is covered by offline fixtures. |
 | ~~senshi~~ | senshi.live | ❌ removed | Backend returns **HTTP 500 on every route** (`/`, `/anime`, `/episodes/1`, `/api/status`). Site registered 2025, currently broken → removed. |
 | ~~mkissa~~ | mkissa.to | ❌ removed | Site live but gates every non-browser request behind a reCAPTCHA "Security Check" wall; the scraper can never return a result → removed. |
+
+## Torrent audit (round 2)
+
+| Provider | Upstream | Verdict | Evidence |
+|:--|:--|:--|:--|
+| **nyaa** | nyaa.si RSS | ✅ working | Live RSS returned fresh One Piece releases (Aug 2026) with info hashes. |
+| **animetosho** | feed.animetosho.org/json | ✅ working | Live JSON: magnets, seeders, .torrent URLs all present. |
+| **subplease** | subsplease.org/api | ✅ working | Live: One Piece 1173–1175 with 480p/720p/1080p magnets. |
+| **seadex** | releases.moe (PocketBase) | ✅ working | `filter=alID=21&expand=trs` returns the A&C best releases with full file lists. |
+| **nekobt** | nekobt.to torznab | ✅ working | Torznab search returns items with magnets, seeders, sizes. |
+| **aniliberty** | aniliberty.top / anilibria.top | 🔧 rewritten | The HTML scrape 404'd (`/search?q=` is gone). Rewritten onto the verified JSON API: `api/v1/app/search/releases` + `api/v1/anime/torrents/release/{id}` (magnets, seeders, sizes confirmed live — 131 seeders on a Frieren batch). |
+| ~~acgrip~~ | acg.rip | ❌ removed | Site is alive but its RSS search endpoint returns an **empty body for every term**, and the site itself announces `Tracker 不再有效` (tracker no longer valid) — discovery and downloading are both dead. |
+
+Also fixed while testing: the shared episode-range parser missed batches like
+`[1-28]` (1-digit range starts), so SubsPlease-style packs were filtered out of
+episode-specific searches; the range regexes now accept `1-28` shapes.
 
 ## Notable upstream changes handled
 
@@ -43,3 +59,6 @@ scraper code path verified against the live markup.
   network-restricted sandbox every provider reports empty by design.
 - `tests/smoke-moviebox-anizone.test.ts` — offline fixtures validating the new
   moviebox provider end-to-end, the anizone search fallback, and the registry.
+- `tests/smoke-round2.test.ts` — offline fixtures for the WAW restore (player1
+  decode, CF-challenge handling, iframe filtering), the AniLiberty JSON rewrite,
+  and the torrent registry.

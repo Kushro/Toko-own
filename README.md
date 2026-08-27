@@ -24,13 +24,13 @@ Toko is the official unified extension for the [Tatakai](https://github.com/snoz
 
 | Category | Providers | Capabilities |
 |:--|:--:|:--|
-| **Stream** | 15 | Direct-stream sources (14 anime + MovieBox movies/TV) |
-| **Torrent** | 7 | Magnet links and torrent files |
+| **Stream** | 16 | Direct-stream sources (15 anime + MovieBox movies/TV) |
+| **Torrent** | 6 | Magnet links and torrent files |
 | **Manga** | 5 | Chapters, pages, and scanlator metadata |
 
 ### Streaming
 
-- 14 anime direct-stream providers
+- 15 anime direct-stream providers
 - MovieBox for movies & TV (direct MP4/HLS + captions)
 - Support for single episodes
 - Optional movie support
@@ -45,11 +45,12 @@ Every provider was checked against its live origin and repaired, kept, or remove
 | ✅ Working | nebula, animepahe, animeya, animelok, aniworld, reanime, fouranime, anikoto, animeheaven, anizone, animeblkom, desidub | Domain rot repaired where sites moved (animesalt → .cx, toonstream → toon-stream.site, anikoto → .cz, animepahe → .pw) |
 | 🔧 Repaired | toonstream, anizone, animesalt | New live mirrors; ToonStream download-table extraction; AniZone plain-HTML search fallback |
 | ➕ Added | moviebox | Ported from [walterwhite-69/Moviebox-API](https://github.com/walterwhite-69/Moviebox-API) — guest-JWT auth, search, direct MP4/HLS streams, captions, embed fallback |
-| ❌ Removed | watchanimeworld, senshi, mkissa | Dead domains (watchanimeworld), backend 500s (senshi), reCAPTCHA-gated for non-browser clients (mkissa) |
+| ♻️ Restored | watchanimeworld | Rebuilt for the successor domain watchanimeworld.one (Cloudflare-aware, player1 server-list extraction) |
+| ❌ Removed | senshi, mkissa, acgrip | Backend 500s (senshi), reCAPTCHA-gated for non-browser clients (mkissa), dead RSS + dead tracker (acgrip) |
 
 ### Torrent
 
-- 7 torrent indexers
+- 6 torrent indexers
 - Magnet link support
 - Torrent file support
 - Batch searching through a unified provider interface
