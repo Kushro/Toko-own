@@ -13,6 +13,14 @@ import type { StreamProvider, TorrentProvider, MangaProvider } from '../types/in
 //
 // Keep `nebula` first — it resolves straight from an AniList id with no title
 // search, so it is both the fastest and the most reliable first frame.
+// Providers removed 2026-08 after a live health check:
+//   - `senshi` — senshi.live answers HTTP 500 on every route (search, episodes,
+//     episode-embeds); the backend is down.
+//   - `mkissa` — mkissa.to gates every non-browser request behind a reCAPTCHA
+//     "Security Check" wall, so the scraper could never return a result.
+//   - `acgrip` — acg.rip's RSS search endpoint returns an empty body for every
+//     term (including none) and the site itself announces its tracker is no
+//     longer valid, so neither discovery nor downloading can work.
 import nebula from './stream/justanime.js';
 import animepahe from './stream/animepahe.js';
 import animeya from './stream/animeya.js';
@@ -20,7 +28,6 @@ import toonstream from './stream/toonstream.js';
 import animelok from './stream/animelok.js';
 import watchanimeworld from './stream/watchanimeworld.js';
 import aniworld from './stream/aniworld.js';
-import senshi from './stream/senshi.js';
 import reanime from './stream/reanime.js';
 import fouranime from './stream/fouranime.js';
 import anikoto from './stream/anikoto.js';
@@ -29,7 +36,7 @@ import anizone from './stream/anizone.js';
 import animesalt from './stream/animesalt.js';
 import animeblkom from './stream/animeblkom.js';
 import desidub from './stream/desidub.js';
-import mkissa from './stream/mkissa.js';
+import moviebox from './stream/moviebox.js';
 
 export const STREAM_PROVIDERS: StreamProvider[] = [
   nebula,
@@ -39,7 +46,6 @@ export const STREAM_PROVIDERS: StreamProvider[] = [
   animelok,
   watchanimeworld,
   aniworld,
-  senshi,
   reanime,
   fouranime,
   anikoto,
@@ -48,12 +54,11 @@ export const STREAM_PROVIDERS: StreamProvider[] = [
   animesalt,
   animeblkom,
   desidub,
-  mkissa,
+  moviebox,
 ];
 
 // ── Torrent providers ─────────────────────────────────────────────────────────
 import nyaa from './torrent/nyaa.js';
-import acgrip from './torrent/acgrip.js';
 import animetosho from './torrent/animetosho.js';
 import subplease from './torrent/subplease.js';
 import seadex from './torrent/seadex.js';
@@ -61,7 +66,6 @@ import nekobt from './torrent/nekobt.js';
 import aniliberty from './torrent/aniliberty.js';
 export const TORRENT_PROVIDERS: TorrentProvider[] = [
   nyaa,
-  acgrip,
   animetosho,
   subplease,
   seadex,

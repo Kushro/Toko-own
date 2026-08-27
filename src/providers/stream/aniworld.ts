@@ -146,33 +146,6 @@ const provider: StreamProvider = {
     } finally {
       clearTimeout(timer);
     }
-
-    const redirects = extractRedirectLinks(html);
-    if (redirects.length === 0) return [];
-
-    // Try each hoster in priority order until one yields a stream.
-    for (const link of [pickRedirect(redirects), ...redirects].filter(Boolean) as RedirectLink[]) {
-      const hosterUrl = await followRedirect(link.id, episodePage);
-      if (!hosterUrl) continue;
-      const stream = await extractStreamFromHoster(hosterUrl, link.hoster);
-      if (stream) {
-        return [{
-          source: 'aniworld',
-          url: stream,
-          quality: normalizeQuality(''),
-          headers: {
-            Referer: hosterUrl,
-            Origin: new URL(hosterUrl).origin,
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-          },
-          subtitles: [],
-          audioLanguage: 'de',
-          sourceType: detectSourceType(stream),
-        }];
-      }
-    }
-
-    return [];
   },
 };
 

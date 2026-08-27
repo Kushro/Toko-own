@@ -51,6 +51,41 @@ interface AnizoneSearchItem {
   title_list?: Record<string, string>;
 }
 
+/**
+ * Parse the server-rendered result links (2026 layout): each hit is an
+ * `<a href="/anime/{slug}" title="{title}">` (plain or around a poster image).
+ * This runs before the Livewire round-trip because the index now renders
+ * links directly into the HTML.
+ */
+function parseSearchLinks(html: string): AnizoneSearchItem[] {
+  const out: AnizoneSearchItem[] = [];
+  const seen = new Set<string>();
+  const re = /<a[^>]+href=["'](?:https?:\/\/[^/]+)?\/anime\/([a-z0-9]+)(?:\/\d+)?\/?(?:[?#][^"']*)?["'][^>]*>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) && out.length < 30) {
+    const slug = m[1];
+    if (!slug || seen.has(slug)) continue;
+
+    // Title: `title` attr on the anchor, or the anchor's text content.
+    const tagEnd = html.indexOf('>', m.index);
+    const tag = tagEnd !== -1 ? html.slice(m.index, tagEnd + 1) : m[0];
+    let title =
+      /title=["']([^"']+)["']/i.exec(tag)?.[1] ??
+      '';
+    if (!title) {
+      const closeIdx = html.indexOf('</a>', tagEnd);
+      if (closeIdx !== -1) {
+        const inner = html.slice((tagEnd ?? m.index) + 1, closeIdx);
+        title = inner.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+      }
+    }
+    if (!title || title.length < 2) continue;
+    seen.add(slug);
+    out.push({ slug, main_title: title });
+  }
+  return out;
+}
+
 function parseSearchItems(html: string): AnizoneSearchItem[] {
   // AniZone embeds items in x-data Alpine attribute as JSON.parse('[...]')
   // Pattern: items: JSON.parse('[...json...]')
@@ -75,114 +110,7 @@ function parseSearchItems(html: string): AnizoneSearchItem[] {
       continue;
     }
   }
-}
-
-interface Candidate {
-  id: string;
-  title: string;
-}
-
-interface ScoredCandidate extends Candidate {
-  score: number;
-}
-
-function collectAnimeLinks(html: string, query: string): ScoredCandidate[] {
-  const $ = __tatakai_parse_html__(html);
-  const out: ScoredCandidate[] = [];
-  const seen = new Set<string>();
-
-  $.find('a[href*="/anime/"]').each((_: number, el: any) => {
-    const href: string = el.attr?.('href') ?? '';
-    // Skip episode links (they contain a trailing /{number}).
-    const m = href.match(/\/anime\/([a-z0-9]+)(?:\/(\d+))?\/?(?:[?#].*)?$/i);
-    if (!m || m[2]) return;
-    const id = m[1];
-    if (seen.has(id)) return;
-    const title: string = (el.attr?.('title') ?? el.text?.() ?? '').trim();
-    if (!title || title.length < 2) return;
-    seen.add(id);
-    out.push({ id, title, score: scoreMatch(query, title) });
-  });
-
-  return out.sort((a, b) => b.score - a.score);
-}
-
-async function findAnimeId(titles: string[]): Promise<string | null> {
-  for (const query of buildSearchQueries(titles)) {
-    // 1. Site search
-    const searchHtml = await fetchText(`${BASE}/anime?keyword=${encodeURIComponent(query)}`);
-    if (searchHtml) {
-      const hits = collectAnimeLinks(searchHtml, query);
-      if (hits.length > 0 && hits[0].score >= 0.4) return hits[0].id;
-    }
-
-    // 2. Fallback: walk the first couple of index pages.
-    for (let page = 1; page <= 2; page++) {
-      const listHtml = await fetchText(`${BASE}/anime?page=${page}`);
-      if (!listHtml) continue;
-      const hits = collectAnimeLinks(listHtml, query);
-      if (hits.length > 0) return hits[0].id;
-    }
-  }
-  return null;
-}
-
-function extractStreams(html: string, epUrl: string): SourceResult[] {
-  const headers = { Referer: epUrl, 'User-Agent': UA };
-  const results: SourceResult[] = [];
-
-  // 1. Inline m3u8 (may be inside a JSON island or a <script>).
-  const m3u8 = html.match(/["'`](https?:\/\/[^"'`\s]+\.m3u8[^"'`\s]*)["'`]/i);
-  if (m3u8) {
-    results.push({
-      source: 'anizone',
-      url: m3u8[1],
-      quality: normalizeQuality(''),
-      headers,
-      subtitles: [],
-      sourceType: 'hls',
-    });
-  }
-
-  // 2. Inline mp4.
-  if (results.length === 0) {
-    const mp4 =
-      html.match(/<source[^>]+src=["']([^"']+\.mp4[^"']*)["']/i) ||
-      html.match(/["'`](https?:\/\/[^"'`\s]+\.mp4[^"'`\s]*)["'`]/i);
-    if (mp4) {
-      results.push({
-        source: 'anizone',
-        url: mp4[1],
-        quality: normalizeQuality(''),
-        headers,
-        subtitles: [],
-        sourceType: 'mp4',
-      });
-    }
-  }
-
-  // 3. iframe / embed as custom source.
-  if (results.length === 0) {
-    const $ = __tatakai_parse_html__(html);
-    let embed: string | null = null;
-    $.find('iframe[src], iframe[data-src], video source[src]').each((_: number, el: any) => {
-      if (embed) return;
-      const src: string = el.attr?.('src') ?? el.attr?.('data-src') ?? '';
-      if (src && !/googletagmanager|recaptcha|a-ads/i.test(src)) embed = src;
-    });
-    if (embed) {
-      results.push({
-        source: 'anizone',
-        url: embed,
-        quality: normalizeQuality(''),
-        headers,
-        subtitles: [],
-        sourceType: detectSourceType(embed),
-      });
-    }
-  }
-
-  return results;
+  return [];
 }
 
 function titlesForItem(item: AnizoneSearchItem): string[] {
@@ -222,6 +150,10 @@ async function livewireSearch(base: string, query: string): Promise<AnizoneSearc
   const directItems = parseSearchItems(html);
   if (directItems.length > 0) return directItems;
 
+  // 2026 layout: the index server-renders plain /anime/{slug} anchor links.
+  const linkItems = parseSearchLinks(html);
+  if (linkItems.length > 0) return linkItems;
+
   const csrf = html.match(/<meta name="csrf-token" content="([^"]+)"/)?.[1];
   if (!csrf) return [];
 
@@ -257,13 +189,16 @@ async function livewireSearch(base: string, query: string): Promise<AnizoneSearc
       timeoutMs: 8000,
     });
     storeCookies(jar, res);
-    if (!res.ok) return directItems;
+    if (!res.ok) return linkItems.length > 0 ? linkItems : directItems;
     const payload = await res.json() as { components?: Array<{ effects?: { html?: string } }> };
     const effectsHtml = payload.components?.[0]?.effects?.html ?? '';
     const livewireItems = parseSearchItems(effectsHtml);
-    return livewireItems.length > 0 ? livewireItems : directItems;
+    if (livewireItems.length > 0) return livewireItems;
+    const livewireLinks = parseSearchLinks(effectsHtml);
+    if (livewireLinks.length > 0) return livewireLinks;
+    return linkItems.length > 0 ? linkItems : directItems;
   } catch {
-    return directItems;
+    return linkItems.length > 0 ? linkItems : directItems;
   }
 }
 

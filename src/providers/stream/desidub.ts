@@ -117,7 +117,7 @@ const provider: StreamProvider = {
   sites: [BASE_URL],
   async single(opts: SourceOptions): Promise<SourceResult[]> {
     try {
-      return findSources(opts.titles, opts.episode ?? 1);
+      return await findSources(opts.titles, opts.episode ?? 1);
     } catch {
       return [];
     }

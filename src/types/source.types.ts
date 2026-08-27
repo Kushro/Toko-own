@@ -4,7 +4,7 @@
  */
 
 /** Video container inferred from a torrent release name or its file list. */
-export type TorrentFileFormat = 'mkv' | 'mp4' | 'webm' | 'avi' | 'mov' | 'm4v' | 'video';
+export type TorrentFileFormat = 'mkv' | 'mp4' | 'webm' | 'avi' | 'mov' | 'm4v' | 'ts' | 'flv' | 'wmv' | 'mpg' | 'mpeg' | 'ogv' | 'video';
 
 /** Runtime limits for a single source lookup. */
 export interface ProviderRunOptions {

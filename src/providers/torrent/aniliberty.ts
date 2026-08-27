@@ -1,15 +1,71 @@
 /**
- * AniLiberty torrent provider adapter (HTML scrape via loadHtml).
- * Source: net-new
- * Requirements: 4.2, 4.3
+ * AniLiberty — torrent provider (Russian anime dubs).
+ *
+ * Rewritten 2026-08 onto the real JSON API after the HTML-scrape approach
+ * started 404ing (`/search?q=…` no longer exists). Endpoints verified live:
+ *
+ *   GET /api/v1/app/search/releases?query={q}&include=id,name.main,name.english
+ *     → [{ id, name: { main, english } }]
+ *   GET /api/v1/anime/torrents/release/{id}?include=id,filename,magnet,size,seeders,leechers
+ *     → [{ id, filename, magnet, size, seeders, leechers }]
+ *
+ * `aniliberty.top` and upstream `anilibria.top` both serve the API; quality
+ * metadata is parsed from the torrent filename ("[WEBRip 1080p][HEVC][1-28]").
+ * Magnets carry the AniLiberty tracker (`tr.libria.fun`).
  */
-
 import { normalizeQuality } from '../../utils/scraping/quality.js';
 import type { TorrentProvider, SourceOptions, SourceResult } from '../../types/index.js';
-import { fetchResponse, loadHtml } from '../../utils/http/fetch.js';
-import { scoreEpisodeMatch, isBatchTitle } from '../../utils/torrent/matcher.js';
+import { fetchJson } from '../../utils/http/fetch.js';
+import { buildMagnet, inferTorrentFileFormat } from '../../utils/torrent/matcher.js';
+import { scoreEpisodeMatch, isBatchTitle, scoreTitleMatch } from '../../utils/torrent/matcher.js';
 
-const BASES = ['https://aniliberty.top', 'https://aniliberty.moe', 'https://anilib.top'];
+const BASES = ['https://aniliberty.top', 'https://anilibria.top'];
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36';
+
+interface SearchRelease {
+  id?: number;
+  name?: { main?: string; english?: string };
+}
+
+interface ApiTorrent {
+  id?: number;
+  filename?: string;
+  magnet?: string;
+  hash?: string;
+  size?: number;
+  seeders?: number;
+  leechers?: number;
+}
+
+function humanSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '';
+  if (bytes >= 1_000_000_000) return `${(bytes / 1_000_000_000).toFixed(1)} GB`;
+  if (bytes >= 1_000_000) return `${Math.round(bytes / 1_000_000)} MB`;
+  return `${Math.round(bytes / 1_000)} KB`;
+}
+
+async function searchReleases(title: string): Promise<SearchRelease[]> {
+  for (const base of BASES) {
+    const data = await fetchJson<SearchRelease[]>(
+      `${base}/api/v1/app/search/releases?query=${encodeURIComponent(title)}&include=id,name.main,name.english`,
+      { headers: { 'User-Agent': UA, Accept: 'application/json' }, timeoutMs: 7000 },
+    );
+    if (Array.isArray(data) && data.length > 0) return data;
+  }
+  return [];
+}
+
+async function fetchTorrents(releaseId: number): Promise<ApiTorrent[]> {
+  for (const base of BASES) {
+    const data = await fetchJson<ApiTorrent[]>(
+      `${base}/api/v1/anime/torrents/release/${releaseId}` +
+        `?include=id,hash,filename,magnet,size,seeders,leechers`,
+      { headers: { 'User-Agent': UA, Accept: 'application/json' }, timeoutMs: 7000 },
+    );
+    if (Array.isArray(data) && data.length > 0) return data;
+  }
+  return [];
+}
 
 const provider: TorrentProvider = {
   name: 'aniliberty',
@@ -19,117 +75,58 @@ const provider: TorrentProvider = {
     const ep = opts.episode ?? 0;
     if (!title) return [];
 
-    const epPad = ep > 0 ? String(ep).padStart(2, '0') : '';
-    const query = encodeURIComponent(`${title} ${epPad}`.trim());
+    // 1. Search — AniLiberty names are Russian; the English field is what we
+    //    match the query against, but a query with no match still returns the
+    //    site's own candidates, so score every field and take the best.
+    const releases = await searchReleases(title);
+    if (releases.length === 0) return [];
 
-    let html = '';
-    const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36';
-
-    for (const domain of BASES) {
-      try {
-        const res = await fetchResponse(`${domain}/search?q=${query}`, {
-          headers: { 'User-Agent': UA },
-          signal: AbortSignal.timeout(4000),
-        } as RequestInit);
-        if (res.ok) {
-          html = await res.text();
-          if (html) break;
-        }
-      } catch { continue; }
+    let best: { id: number; label: string; score: number } | null = null;
+    for (const release of releases) {
+      const id = Number(release?.id);
+      if (!Number.isFinite(id) || id <= 0) continue;
+      const names = [release.name?.english, release.name?.main].filter((v): v is string => Boolean(v?.trim()));
+      if (names.length === 0) continue;
+      const score = Math.max(...names.map((n) => scoreTitleMatch(title, n)));
+      const label = names.join(' / ');
+      if (!best || score > best.score) best = { id, label, score };
     }
+    if (!best) return [];
 
-    if (!html) return [];
-
-    let $: any;
-    try {
-      $ = loadHtml(html);
-    } catch {
-      return [];
-    }
-
+    // 2. Torrents for the release
+    const torrents = await fetchTorrents(best.id);
     const results: SourceResult[] = [];
 
-    // Extract magnet links from <a href="magnet:..."> elements
-    $('a[href^="magnet:"]').each((_: number, el: any) => {
-      const href = $(el).attr('href') ?? '';
-      if (!href) return;
+    for (const torrent of torrents) {
+      const filename = String(torrent?.filename || `AniLiberty ${best.label}`).trim();
+      const isBatch = isBatchTitle(filename);
+      if (ep > 0 && !isBatch && scoreEpisodeMatch(filename, ep) === 0) continue;
 
-      const linkText = $(el).text().trim();
-      const parentTitle = $(el)
-        .closest('article, .torrent-item, .entry, .result-item, li, tr')
-        .find('h2, h3, h4, .title, .name')
-        .first()
-        .text()
-        .trim();
+      const magnet = String(torrent?.magnet || '').trim();
+      const url = magnet || (torrent?.hash ? buildMagnet(torrent.hash, filename) : '');
+      if (!url) continue;
 
-      const title = parentTitle || linkText;
-      if (ep > 0 && (isBatchTitle(title) || scoreEpisodeMatch(title, ep) === 0)) return;
-
-      // Try to extract peer data from nearby elements
-      const parent = $(el).closest('article, .torrent-item, .entry, .result-item, li, tr');
-      const seedersText = parent.find('.seeders, .seed, [class*="seed"]').first().text().trim();
-      const leechersText = parent.find('.leechers, .leech, .peers, [class*="leech"]').first().text().trim();
-      
-      const seeders = parseInt(seedersText) || undefined;
-      const leechers = parseInt(leechersText) || undefined;
-      const peers = (seeders || 0) + (leechers || 0);
+      const seeders = Number(torrent?.seeders);
+      const leechers = Number(torrent?.leechers);
 
       results.push({
         source: 'aniliberty',
-        url: href,
-        quality: normalizeQuality(title),
+        url,
+        quality: normalizeQuality(filename),
         headers: {},
         subtitles: [],
-        sourceType: 'torrent' as const,
-        audioLanguage: 'ja',
-        torrentTitle: title,
-        seeders,
-        leechers,
-        peers: peers > 0 ? peers : undefined,
-      });
-    });
-
-    // Also pick up direct .torrent file links if magnet links aren't present
-    if (results.length === 0) {
-      $('a[href$=".torrent"], a[href*="/download/torrent"]').each((_: number, el: any) => {
-        const href = $(el).attr('href') ?? '';
-        if (!href) return;
-
-        // Resolve relative URLs
-        const resolvedHref = href.startsWith('http') ? href : `https://aniliberty.moe${href}`;
-
-        const linkText = $(el).text().trim();
-        const parent = $(el)
-          .closest('article, .torrent-item, .entry, .result-item, li, tr');
-        const parentTitle = parent
-          .find('h2, h3, h4, .title, .name')
-          .first()
-          .text()
-          .trim();
-
-        const title = parentTitle || linkText;
-        
-        // Extract peer data
-        const seedersText = parent.find('.seeders, .seed, [class*="seed"]').first().text().trim();
-        const leechersText = parent.find('.leechers, .leech, .peers, [class*="leech"]').first().text().trim();
-        
-        const seeders = parseInt(seedersText) || undefined;
-        const leechers = parseInt(leechersText) || undefined;
-        const peers = (seeders || 0) + (leechers || 0);
-
-        results.push({
-          source: 'aniliberty',
-          url: resolvedHref,
-          quality: normalizeQuality(title),
-          headers: {},
-          subtitles: [],
-          sourceType: 'torrent' as const,
-          audioLanguage: 'ja',
-          torrentTitle: title,
-          seeders,
-          leechers,
-          peers: peers > 0 ? peers : undefined,
-        });
+        audioLanguage: 'ru',
+        language: 'Russian',
+        sourceType: 'torrent',
+        providerName: 'AniLiberty',
+        providerKey: 'aniliberty',
+        torrentTitle: filename,
+        fileSize: Number(torrent?.size) > 0 ? humanSize(Number(torrent.size)) : undefined,
+        magnetLink: url.startsWith('magnet:') ? url : undefined,
+        seeders: Number.isFinite(seeders) ? seeders : undefined,
+        leechers: Number.isFinite(leechers) ? leechers : undefined,
+        peers: (Number.isFinite(seeders) ? seeders : 0) + (Number.isFinite(leechers) ? leechers : 0),
+        fileFormat: inferTorrentFileFormat(filename),
       });
     }
 
