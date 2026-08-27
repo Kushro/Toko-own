@@ -19,7 +19,10 @@ import type { StreamProvider, SourceOptions, SourceResult } from '../../types/in
 
 import { fetchResponse, loadHtml } from '../../utils/http/fetch.js';
 
-const BASES = ['https://anikoto.net', 'https://anikoto.cz', 'https://anikoto.me', 'https://anikoto.to'];
+// Re-verified 2026-08: anikoto.cz is the live origin (search + watch + AJAX all
+// answer). .to and .net no longer resolve, so .cz leads to avoid paying its
+// connection timeout on every search; the rest stay as failover mirrors.
+const BASES = ['https://anikoto.cz', 'https://anikoto.net', 'https://anikoto.me', 'https://anikoto.to'];
 const ANILIST_GRAPHQL = 'https://graphql.anilist.co';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36';
 

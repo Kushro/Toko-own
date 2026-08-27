@@ -9,7 +9,10 @@ import { fetchResponse } from '../../utils/http/fetch.js';
 // without a browser UA, so we try the canonical domain first then mirrors.
 // `.su` is the mirror `.ru` currently redirects to; it is listed so the provider
 // recovers on its own if the DDoS-Guard interstitial there is ever lifted.
-const BASE_URLS = ['https://animepahe.ru', 'https://animepahe.su', 'https://animepahe.is', 'https://animepahe.org', 'https://animepahe.pw', 'https://animepahe.io', 'https://animepahe.com'];
+// animepahe rotates official domains; the site's own banner (checked 2026-08)
+// currently names animepahe.pw / .com / .org as the only real ones, and .pw
+// answers. Lead with .pw; the rest remain as redirect/failover targets.
+const BASE_URLS = ['https://animepahe.pw', 'https://animepahe.org', 'https://animepahe.com', 'https://animepahe.ru', 'https://animepahe.su', 'https://animepahe.is', 'https://animepahe.io'];
 
 /**
  * Circuit breaker for the whole mirror set — same reasoning as watchanimeworld.

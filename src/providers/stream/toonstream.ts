@@ -18,14 +18,16 @@ import { resolveAsCdnSource } from './toonstream/embed/as-cdn.js';
 import { resolveRubystmSource, RUBYSTM_ORIGIN } from './toonstream/embed/rubystm.js';
 import { resolveMultiEmbed, detectEmbedLanguage } from './toonstream/embed/multi-embed.js';
 
-const PRIMARY = 'https://toonstream.one';
+// Live mirrors re-verified 2026-08. Everything now funnels into
+// toon-stream.site (toonstream.one/.dad 30x there; .co 500s; .day/.link dead).
+// toon.snvhost.com is the episode host the site's own support comments link to.
+const PRIMARY = 'https://toon-stream.site';
 const MIRRORS = [
   PRIMARY,
-  'https://toonstream.co',
-  'https://toonstream.day',
-  'https://toonstream.link',
-  'https://toon-stream.site',
+  'https://toonstream.dad',
+  'https://toon.snvhost.com',
   'https://toonstream.net',
+  'https://toonstream.one',
 ];
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36';
@@ -168,6 +170,23 @@ function collectEpisodeEmbedUrls(
       const href = el.attr?.('href') ?? el.attr?.('data-url') ?? '';
       const label = getServerLabel(el);
       if (href) add(href, label);
+    });
+  }
+
+  // ── Download-table structure (2026+) ─────────────────────────────────────
+  // Episode pages now list servers as anchor rows ("01 Ruby 1080p [Download]")
+  // linking the player/file pages directly instead of embedding iframes.
+  // Known player hosts are resolved by resolvePlayerUrl(); anything else that
+  // is clearly a player/download page is still collected so the app gets an
+  // embed fallback rather than nothing.
+  if (out.length === 0) {
+    const PLAYER_HOST =
+      /rubystm\.com\/d\/|gdmirrorbot\.nl\/file\/|cloudy\.upns\.one|vidmoly\.(me|net)|download\.openx\.xyz|short\.icu\//i;
+    $.find('a[href]').each((_: number, el: any) => {
+      const href: string = el.attr?.('href') ?? '';
+      if (!href || !PLAYER_HOST.test(href)) return;
+      const label: string = (el.attr?.('title') ?? el.text?.() ?? '').trim().slice(0, 40);
+      add(href, label);
     });
   }
 

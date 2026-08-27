@@ -12,7 +12,11 @@ import type { StreamProvider, SourceOptions, SourceResult } from '../../types/in
 
 import { fetchResponse, loadHtml } from '../../utils/http/fetch.js';
 
-const BASES = ['https://animesalt.link', 'https://animesalt.top', 'https://animesalt.com', 'https://animesalt.net'];
+// Live domains re-verified 2026-08: animesalt.cx serves the ToroFilm theme the
+// scraper targets (animesalt.com/.ac 30x there, animesalt.link is dead).
+// animesalt.me is also online but uses a different theme (`/tv/{slug}`), so it
+// is NOT listed — its pages would 404 under /series/ anyway.
+const BASES = ['https://animesalt.cx', 'https://animesalt.ac'];
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36';
 
 async function fetchHtml(url: string): Promise<{ html: string; base: string } | null> {

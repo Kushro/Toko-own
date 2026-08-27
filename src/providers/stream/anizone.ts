@@ -51,6 +51,41 @@ interface AnizoneSearchItem {
   title_list?: Record<string, string>;
 }
 
+/**
+ * Parse the server-rendered result links (2026 layout): each hit is an
+ * `<a href="/anime/{slug}" title="{title}">` (plain or around a poster image).
+ * This runs before the Livewire round-trip because the index now renders
+ * links directly into the HTML.
+ */
+function parseSearchLinks(html: string): AnizoneSearchItem[] {
+  const out: AnizoneSearchItem[] = [];
+  const seen = new Set<string>();
+  const re = /<a[^>]+href=["'](?:https?:\/\/[^/]+)?\/anime\/([a-z0-9]+)(?:\/\d+)?\/?(?:[?#][^"']*)?["'][^>]*>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) && out.length < 30) {
+    const slug = m[1];
+    if (!slug || seen.has(slug)) continue;
+
+    // Title: `title` attr on the anchor, or the anchor's text content.
+    const tagEnd = html.indexOf('>', m.index);
+    const tag = tagEnd !== -1 ? html.slice(m.index, tagEnd + 1) : m[0];
+    let title =
+      /title=["']([^"']+)["']/i.exec(tag)?.[1] ??
+      '';
+    if (!title) {
+      const closeIdx = html.indexOf('</a>', tagEnd);
+      if (closeIdx !== -1) {
+        const inner = html.slice((tagEnd ?? m.index) + 1, closeIdx);
+        title = inner.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+      }
+    }
+    if (!title || title.length < 2) continue;
+    seen.add(slug);
+    out.push({ slug, main_title: title });
+  }
+  return out;
+}
+
 function parseSearchItems(html: string): AnizoneSearchItem[] {
   // AniZone embeds items in x-data Alpine attribute as JSON.parse('[...]')
   // Pattern: items: JSON.parse('[...json...]')
@@ -115,6 +150,10 @@ async function livewireSearch(base: string, query: string): Promise<AnizoneSearc
   const directItems = parseSearchItems(html);
   if (directItems.length > 0) return directItems;
 
+  // 2026 layout: the index server-renders plain /anime/{slug} anchor links.
+  const linkItems = parseSearchLinks(html);
+  if (linkItems.length > 0) return linkItems;
+
   const csrf = html.match(/<meta name="csrf-token" content="([^"]+)"/)?.[1];
   if (!csrf) return [];
 
@@ -150,13 +189,16 @@ async function livewireSearch(base: string, query: string): Promise<AnizoneSearc
       timeoutMs: 8000,
     });
     storeCookies(jar, res);
-    if (!res.ok) return directItems;
+    if (!res.ok) return linkItems.length > 0 ? linkItems : directItems;
     const payload = await res.json() as { components?: Array<{ effects?: { html?: string } }> };
     const effectsHtml = payload.components?.[0]?.effects?.html ?? '';
     const livewireItems = parseSearchItems(effectsHtml);
-    return livewireItems.length > 0 ? livewireItems : directItems;
+    if (livewireItems.length > 0) return livewireItems;
+    const livewireLinks = parseSearchLinks(effectsHtml);
+    if (livewireLinks.length > 0) return livewireLinks;
+    return linkItems.length > 0 ? linkItems : directItems;
   } catch {
-    return directItems;
+    return linkItems.length > 0 ? linkItems : directItems;
   }
 }
 
