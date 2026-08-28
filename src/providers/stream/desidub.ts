@@ -15,6 +15,13 @@ function decodeB64(str: string): string {
   try { return atob(str); } catch { return ''; }
 }
 
+function extractEmbedUrl(value: string): string {
+  const iframe = value.match(
+    /<iframe\b[^>]*\b(?:src|data-src)\s*=\s*(['"])([^'"]+)\1/i,
+  );
+  return iframe?.[2]?.trim() || value.trim();
+}
+
 async function findSources(titles: string[], epNumber: number): Promise<SourceResult[]> {
   const bases = [BASE_URL];
   for (const query of buildSearchQueries(titles)) {
@@ -88,12 +95,10 @@ async function findSources(titles: string[], epNumber: number): Promise<SourceRe
           const [b64Name, b64Url] = embedData.split(':');
           if (!b64Name || !b64Url) return;
           const serverName = decodeB64(b64Name);
-          let finalUrl = decodeB64(b64Url);
+          const decoded = decodeB64(b64Url);
+          let finalUrl = extractEmbedUrl(decoded);
           if (!finalUrl || finalUrl.includes('googletagmanager')) return;
-          if (finalUrl.includes('<iframe')) {
-            const m = finalUrl.match(/src=['"]([^'"]+)['"]/);
-            if (m) finalUrl = m[1];
-          }
+          if (!/^https?:\/\//i.test(finalUrl)) return;
           const isDub = serverName.toLowerCase().includes('dub') || !serverName.toLowerCase().includes('sub');
           results.push({
             source: 'desidub',

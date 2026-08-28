@@ -46,6 +46,14 @@ const DEFAULT_HEADERS: Record<string, string> = {
   'sec-fetch-site': 'cross-site',
 };
 
+const PLAYER_HEADERS: Record<string, string> = {
+  'Accept-Language': 'en-US,en;q=0.9',
+  'Cache-Control': 'no-cache',
+  'Pragma': 'no-cache',
+  'X-Source': '',
+  'sec-fetch-site': 'same-origin',
+};
+
 // ── Guest token (auto-refreshed from `x-user` / set-cookie) ─────────────────
 
 let bearerToken: string | null = null;
@@ -96,14 +104,23 @@ async function getBearerToken(timeoutMs: number): Promise<string> {
 /** API GET/POST with guest auth; never throws — failures return null. */
 async function apiRequest<T>(
   url: string,
-  init: { method?: 'GET' | 'POST'; payload?: unknown; timeoutMs?: number } = {},
+  init: {
+    method?: 'GET' | 'POST';
+    payload?: unknown;
+    timeoutMs?: number;
+    headers?: Record<string, string>;
+  } = {},
 ): Promise<T | null> {
-  const { method = 'GET', payload, timeoutMs = 8000 } = init;
+  const { method = 'GET', payload, timeoutMs = 8000, headers = {} } = init;
   const token = await getBearerToken(timeoutMs);
   try {
     const res = await fetchResponse(url, {
       method,
-      headers: { ...DEFAULT_HEADERS, ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      headers: {
+        ...DEFAULT_HEADERS,
+        ...headers,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       ...(payload !== undefined ? { body: JSON.stringify(payload) } : {}),
       timeoutMs,
     });
@@ -251,7 +268,14 @@ async function fetchCaptions(
   try {
     const playUrl =
       `${domain}/wefeed-h5api-bff/subject/play?subjectId=${hit.subjectId}&se=${se}&ep=${ep}&detailPath=${hit.detailPath}`;
-    const play = await apiRequest<MbPlayResponse>(playUrl, { timeoutMs });
+    const play = await apiRequest<MbPlayResponse>(playUrl, {
+      timeoutMs,
+      headers: {
+        ...PLAYER_HEADERS,
+        Referer: playerReferer(domain, hit.detailPath, hit.subjectId, se, ep),
+        Origin: domain,
+      },
+    });
     const first = play?.data?.streams?.[0] ?? play?.data?.hls?.[0] ?? play?.data?.dash?.[0];
     if (!first?.id) return [];
 
@@ -328,7 +352,14 @@ async function resolve(opts: SourceOptions, prefer: 'movie' | 'series'): Promise
 
   const playUrl =
     `${domain}/wefeed-h5api-bff/subject/play?subjectId=${hit.subjectId}&se=${se}&ep=${ep}&detailPath=${hit.detailPath}`;
-  const play = await apiRequest<MbPlayResponse>(playUrl, { timeoutMs });
+  const play = await apiRequest<MbPlayResponse>(playUrl, {
+    timeoutMs,
+    headers: {
+      ...PLAYER_HEADERS,
+      Referer: playerReferer(domain, hit.detailPath, hit.subjectId, se, ep),
+      Origin: domain,
+    },
+  });
   const data = play?.data;
 
   const subtitles = await fetchCaptions(domain, hit, se, ep, timeoutMs);

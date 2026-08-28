@@ -251,6 +251,10 @@ function resolveSourceType(s) {
   return 'embed';
 }
 
+function hasUsableUrl(source) {
+  return source && typeof source.url === 'string' && source.url.trim().length > 0;
+}
+
 /** Full normalization of a raw SourceResult from a provider */
 function normalizeSource(s) {
   const type = resolveSourceType(s);
@@ -281,6 +285,7 @@ function normalizeSource(s) {
 
   return {
     ...s,
+    url: String(s.url || '').trim(),
     providerName,
     providerKey,
     server,
@@ -373,7 +378,9 @@ function sseEvent(res, event, data) {
 }
 
 function buildFinalResponse(allSources, providerStatus, cached) {
-  const normalized = allSources.map(normalizeSource);
+  // A provider failure must not become a playable SSE/JSON entry with an empty
+  // URL. This also protects cached responses built before a provider was fixed.
+  const normalized = allSources.filter(hasUsableUrl).map(normalizeSource);
   const { byLanguage, byType } = categorize(normalized);
   return {
     sources: normalized,
@@ -435,6 +442,7 @@ async function handleSourceRequest(req, res, mode) {
   function onChunk(chunk) {
     providerStatus.push(chunk.diagnostic);
     for (const s of chunk.results) {
+      if (!hasUsableUrl(s)) continue;
       allSources.push(s);
       if (useSSE) {
         sseEvent(res, 'source', normalizeSource(s));

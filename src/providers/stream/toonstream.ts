@@ -416,7 +416,46 @@ async function findSeriesSlug(titles: string[]): Promise<{ slug: string; base: s
     if (r.status === 'fulfilled' && r.value) return r.value;
   }
 
-  // Search fallback: try primary mirror only to keep it fast
+  // Search fallback: ToonStream's current search UI uses a JSON endpoint.
+  // The old `/?s=` route now renders the landing page instead of search hits.
+  for (const query of queries) {
+    try {
+      const response = await fetchResponse(
+        `${PRIMARY}/search/all?q=${encodeURIComponent(query)}`,
+        {
+          headers: { 'User-Agent': UA, Accept: 'application/json' },
+          timeoutMs: 5000,
+        },
+      );
+      if (!response.ok) continue;
+
+      const payload = await response.json() as {
+        data?: Array<{ title?: string; type?: string; url?: string }>;
+      };
+      const hits = (Array.isArray(payload.data) ? payload.data : [])
+        .filter(item => item?.type === 'series' && typeof item.url === 'string')
+        .map(item => {
+          const match = item.url!.match(/\/series\/([^/?#]+)/i);
+          return match
+            ? {
+                slug: match[1],
+                title: String(item.title || match[1]),
+                score: scoreMatch(query, String(item.title || match[1])),
+              }
+            : null;
+        })
+        .filter((item): item is { slug: string; title: string; score: number } => item !== null);
+
+      if (hits.length > 0) {
+        hits.sort((a, b) => b.score - a.score);
+        return { slug: hits[0].slug, base: PRIMARY };
+      }
+    } catch {
+      // Try the legacy HTML search below if the JSON endpoint is unavailable.
+    }
+  }
+
+  // Legacy search fallback: try primary mirror only to keep it fast.
   for (const query of queries) {
     const searchPage = await fetchHtml(`/home/?s=${encodeURIComponent(query)}`);
     if (!searchPage) continue;
