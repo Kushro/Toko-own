@@ -1,0 +1,1 @@
+- [API verification cache](api-verification-cache.md) — clear the in-memory API cache when validating provider or request-shape changes, since stale empty entries can mask working upstream results.

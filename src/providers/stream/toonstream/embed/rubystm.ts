@@ -105,8 +105,16 @@ export async function resolveRubystmSource(
   embedUrl: string,
   toonstreamReferer: string,
 ): Promise<SourceResult | null> {
-  const segments = embedUrl.replace('.html', '').split('/');
-  const fileCode = segments.pop() || segments.pop();
+  let fileCode: string | undefined;
+  try {
+    const parsed = new URL(embedUrl);
+    // Ruby exposes both direct `/d/{code}.html` pages and `/e/{code}.html`
+    // embed wrappers. Both use the same `/dl` extraction request.
+    const match = parsed.pathname.match(/\/(?:d|e)\/([^/]+?)(?:\.html)?\/?$/i);
+    fileCode = match?.[1] ? decodeURIComponent(match[1]) : undefined;
+  } catch {
+    return null;
+  }
   if (!fileCode) return null;
 
   try {

@@ -84,10 +84,14 @@ function resolveUrl(href: string, base: string, pageUrl: string): string {
 }
 
 function findEpisodeHref(html: string, slug: string, season: number, ep: number): string | null {
+  // Series slugs and episode slugs are not always the same on ToonStream
+  // (for example, `one-piece-dub-sub` uses `/episode/one-piece-1x6/`).
   const patterns = [
     new RegExp(`href="(/episode/${slug}-${season}x${ep}/?)"`, 'i'),
     new RegExp(`href="(/episode/${slug}-ep-${ep}/?)"`, 'i'),
     new RegExp(`href="(/episode/${slug}-${ep}/?)"`, 'i'),
+    new RegExp(`href="(/episode/[^"?#]+-${season}x${ep}/?)"`, 'i'),
+    new RegExp(`href="(/episode/[^"?#]+-ep-${ep}/?)"`, 'i'),
   ];
   for (const re of patterns) {
     const m = html.match(re);
@@ -146,7 +150,7 @@ function collectEpisodeEmbedUrls(
 
   // Extract iframes from the video containers
   $.find('#aa-options .video iframe, div[id^="options-"] iframe').each((_: number, el: any) => {
-    const src: string = el.attr?.('src') ?? el.attr?.('data-src') ?? '';
+    const src: string = el.attr?.('src') || el.attr?.('data-src') || '';
     if (!src || /about:blank/i.test(src)) return;
     // Resolve the container id to get the server name
     const containerId: string = el.closest?.('[id^="options-"]')?.attr?.('id') ?? '';
@@ -181,7 +185,7 @@ function collectEpisodeEmbedUrls(
   // embed fallback rather than nothing.
   if (out.length === 0) {
     const PLAYER_HOST =
-      /rubystm\.com\/d\/|gdmirrorbot\.nl\/file\/|cloudy\.upns\.one|vidmoly\.(me|net)|download\.openx\.xyz|short\.icu\//i;
+      /rubystm\.com\/(?:d|e)\/|gdmirrorbot\.nl\/file\/|cloudy\.upns\.one|vidmoly\.(me|net)|download\.openx\.xyz|short\.icu\//i;
     $.find('a[href]').each((_: number, el: any) => {
       const href: string = el.attr?.('href') ?? '';
       if (!href || !PLAYER_HOST.test(href)) return;
@@ -220,6 +224,7 @@ async function followToPlayerIframe(
   const $ = loadHtml(page.html);
   const iframe =
     $('.Video iframe').attr('src') ||
+    $('.Video iframe').attr('data-src') ||
     $('iframe[src]').first().attr('src') ||
     $('iframe[data-src]').first().attr('data-src');
 

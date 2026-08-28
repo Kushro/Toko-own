@@ -116,6 +116,55 @@ async function testWatchAnimeWorld(): Promise<void> {
   check('zephyr wrapper + analytics iframes filtered out', filtered.length === 0, JSON.stringify(filtered.map((r) => r.url)));
 }
 
+// ── toonstream ───────────────────────────────────────────────────────────────
+async function testToonStream(): Promise<void> {
+  console.log('\ntoonstream (JSON discovery + embed wrapper)');
+
+  const episodeHtml = `
+    <aside id="aa-options">
+      <div id="options-0" class="video aa-tb">
+        <iframe data-src="/embed/test-wrapper"></iframe>
+      </div>
+    </aside>
+    <aside class="video-options">
+      <ul class="aa-tbs aa-tbs-video">
+        <li><a href="#options-0"><span class="server">Ruby</span></a></li>
+      </ul>
+    </aside>${' '.repeat(220)}`;
+  const seriesHtml = `<html><body><a href="/episode/one-piece-1x6/">Episode 6</a>${' '.repeat(220)}</body></html>`;
+  const wrapperHtml = `<html><body><div class="Video"><iframe src="https://rubystm.com/e/example.html"></iframe></div>${' '.repeat(220)}</body></html>`;
+
+  // The direct slug (`one-piece`) is intentionally unavailable. Discovery
+  // must use the site's JSON search endpoint, then match the episode slug
+  // independently from the series slug.
+  routes.set(/^https:\/\/toon-stream\.site\/series\/one-piece$/, () =>
+    new Response('not found', { status: 404 }));
+  routes.set(/^https:\/\/toon-stream\.site\/search\/all\?q=/, () =>
+    jsonResponse({
+      count: 1,
+      data: [{ title: 'One Piece', type: 'series', url: '/series/one-piece-dub-sub' }],
+    }));
+  routes.set(/^https:\/\/toon-stream\.site\/series\/one-piece-dub-sub$/, () =>
+    new Response(seriesHtml, { status: 200, headers: { 'Content-Type': 'text/html' } }));
+  routes.set(/^https:\/\/toon-stream\.site\/episode\/one-piece-1x6\/$/, () =>
+    new Response(episodeHtml, { status: 200, headers: { 'Content-Type': 'text/html' } }));
+  routes.set(/^https:\/\/toon-stream\.site\/embed\/test-wrapper$/, () =>
+    new Response(wrapperHtml, { status: 200, headers: { 'Content-Type': 'text/html' } }));
+
+  const mod = await import('../src/providers/stream/toonstream.js');
+  const provider = mod.default;
+  const results = await provider.single({
+    anilistId: 21,
+    titles: ['One Piece'],
+    episode: 6,
+    resolution: '1080p',
+  });
+
+  check('JSON search discovers series', results.length >= 1, `got ${results.length}`);
+  check('episode slug can differ from series slug', results.some((r) => r.url.includes('rubystm.com/e/example.html')));
+  check('wrapper fallback has a usable URL', results.every((r) => /^https?:\/\/\S+$/.test(r.url)));
+}
+
 // ── aniliberty ──────────────────────────────────────────────────────────────
 async function testAniliberty(): Promise<void> {
   console.log('\naniliberty (JSON API rewrite)');
@@ -176,6 +225,7 @@ async function testAniliberty(): Promise<void> {
 async function main(): Promise<void> {
   await testRegistry();
   await testWatchAnimeWorld();
+  await testToonStream();
   await testAniliberty();
   console.log(failures === 0 ? '\nALL SMOKE TESTS PASSED' : `\n${failures} FAILURES`);
   process.exit(failures === 0 ? 0 : 1);
