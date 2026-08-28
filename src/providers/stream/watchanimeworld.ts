@@ -75,11 +75,15 @@ let breakerOpenUntil = 0;
 /** Cloudflare interstitials the fetcher can receive instead of real content. */
 function isChallengePage(html: string): boolean {
   const t = html.toLowerCase();
+  // Cloudflare also injects a harmless `challenge-platform` analytics script
+  // into otherwise valid WordPress pages. Treat that marker as a challenge
+  // only when the page has no player/content signal.
+  const hasRealPageContent = /player1\.php|<iframe|<video|\.m3u8|\.mp4/i.test(html);
   return (
     t.includes('just a moment') ||
     t.includes('attention required') ||
     t.includes('cf-browser-verification') ||
-    t.includes('challenge-platform') ||
+    (t.includes('challenge-platform') && !hasRealPageContent) ||
     (t.includes('cloudflare') && t.includes('ray id'))
   );
 }

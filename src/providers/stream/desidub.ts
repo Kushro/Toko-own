@@ -3,7 +3,7 @@
  * Ported from extension/A1/src/providers/desidubanime/desidubanime.ts
  */
 import { normalizeQuality, detectSourceType } from '../../utils/scraping/quality.js';
-import { buildSearchQueries } from '../../utils/scraping/title-normalizer.js';
+import { buildSearchQueries, scoreMatch } from '../../utils/scraping/title-normalizer.js';
 import type { StreamProvider, SourceOptions, SourceResult } from '../../types/index.js';
 
 import { fetchResponse, loadHtml } from '../../utils/http/fetch.js';
@@ -31,8 +31,18 @@ async function findSources(titles: string[], epNumber: number): Promise<SourceRe
           );
           if (apiRes.ok) {
             const apiJson = (await apiRes.json()) as any[];
-            if (Array.isArray(apiJson) && apiJson.length > 0 && apiJson[0]?.slug) {
-              animeSlug = String(apiJson[0].slug);
+            if (Array.isArray(apiJson)) {
+              const candidates = apiJson
+                .filter(item => item?.slug)
+                .map(item => ({
+                  slug: String(item.slug),
+                  title: String(item.title?.rendered ?? item.title ?? item.slug),
+                }))
+                .map(item => ({ ...item, score: scoreMatch(query, item.title) }))
+                .sort((a, b) => b.score - a.score);
+              if (candidates[0] && candidates[0].score >= 0.35) {
+                animeSlug = candidates[0].slug;
+              }
             }
           }
         } catch { /* fallback to HTML */ }

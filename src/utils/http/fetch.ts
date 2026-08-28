@@ -142,6 +142,20 @@ export function loadHtml(html: string): TokoCheerio {
   // Providers historically call `$.find(selector)` (the worker sandbox
   // exposed a cheerio wrapper with that method). Expose it on the root
   // selection so the same code works in Node/browser/API without changes.
-  ($ as unknown as TokoCheerio).find = (selector: string) => $(selector);
+  //
+  // The old sandbox passed a Cheerio selection to each callback. Cheerio's
+  // native `each()` passes a raw DOM element instead, so legacy providers
+  // using `el.attr()`, `el.text()`, or `el.find()` otherwise see undefined
+  // values and quietly return no sources.
+  ($ as unknown as TokoCheerio).find = (selector: string) => {
+    const selection = $(selector);
+    const legacySelection = selection as any;
+    const nativeEach = selection.each.bind(selection);
+    legacySelection.each = (callback: (index: number, element: any) => void) => {
+      nativeEach((index: number, element: any) => callback(index, $(element)));
+      return legacySelection;
+    };
+    return legacySelection;
+  };
   return $ as unknown as TokoCheerio;
 }

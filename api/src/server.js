@@ -32,7 +32,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 
 const PORT = Number(process.env.PORT || process.env.TOKO_API_PORT || 8099);
-const HOST = process.env.TOKO_API_HOST || '127.0.0.1';
+// Bind to all interfaces so managed/Replit workflows can detect and forward
+// the API port. Local callers can still opt into loopback with TOKO_API_HOST.
+const HOST = process.env.TOKO_API_HOST || '0.0.0.0';
 
 // ── Bundle loading ────────────────────────────────────────────────────────────
 

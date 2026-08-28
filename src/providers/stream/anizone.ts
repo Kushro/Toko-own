@@ -45,6 +45,17 @@ function unwireSnapshot(raw: string): string {
   return raw.replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&#039;/g, "'");
 }
 
+function decodeEmbeddedJson(raw: string): string {
+  // Alpine's JSON.parse argument is escaped twice for non-ASCII characters:
+  // quotes use \u0022 while titles can contain \\u0411-style sequences.
+  return raw
+    .replace(/\\\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/\\\//g, '/')
+    .replace(/\\'/g, "'")
+    .replace(/\\"/g, '"');
+}
+
 interface AnizoneSearchItem {
   slug?: string;
   main_title?: string;
@@ -99,11 +110,7 @@ function parseSearchItems(html: string): AnizoneSearchItem[] {
     const match = html.match(re);
     if (!match) continue;
     try {
-      const json = match[1]
-        .replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
-        .replace(/\\\//g, '/')
-        .replace(/\\'/g, "'")
-        .replace(/\\"/g, '"');
+      const json = decodeEmbeddedJson(match[1]);
       const items = JSON.parse(json) as AnizoneSearchItem[];
       if (Array.isArray(items)) return items;
     } catch {
@@ -237,10 +244,7 @@ async function searchAnimeId(titles: string[]): Promise<{ shortId: string; base:
 }
 
 function decodeVidstackJson(raw: string): { src?: string; subtitles?: Array<{ file?: string; language?: string; title?: string; default?: boolean }> } {
-  const unescaped = raw
-    .replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
-    .replace(/\\\//g, '/');
-  return JSON.parse(unescaped);
+  return JSON.parse(decodeEmbeddedJson(raw));
 }
 
 function extractVidstackSources(html: string, epUrl: string): SourceResult[] {
