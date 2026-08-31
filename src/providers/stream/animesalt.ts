@@ -11,6 +11,7 @@ import { buildSearchQueries, scoreMatch } from '../../utils/scraping/title-norma
 import type { StreamProvider, SourceOptions, SourceResult } from '../../types/index.js';
 
 import { fetchResponse, loadHtml } from '../../utils/http/fetch.js';
+import { resolveAsCdnSource } from './toonstream/embed/as-cdn.js';
 
 // Live domains re-verified 2026-08: animesalt.cx serves the ToroFilm theme the
 // scraper targets (animesalt.com/.ac 30x there, animesalt.link is dead).
@@ -136,6 +137,23 @@ async function findEpisodeUrl(hit: SearchHit, episode: number, base: string): Pr
 
 async function resolvePageSources(html: string, pageUrl: string, base: string): Promise<SourceResult[]> {
   const initial = extractStreams(html, pageUrl);
+
+  // AnimeSalt's current primary player is the same AS-CDN player used by
+  // ToonStream. Resolve it here instead of exposing only the wrapper URL.
+  const asCdnEmbed = initial.find(
+    source => source.sourceType === 'custom' && /as-cdn\d+\.top\/video\//i.test(source.url),
+  );
+  if (asCdnEmbed) {
+    const resolved = await resolveAsCdnSource(asCdnEmbed.url, pageUrl);
+    if (resolved) {
+      return [{
+        ...resolved,
+        source: 'animesalt',
+        audioLanguage: 'ja',
+        language: 'Japanese',
+      }];
+    }
+  }
 
   // If we got a WordPress AJAX marker, resolve it
   const ajaxResult = initial.find(s => s.url.includes('admin-ajax.php|nonce='));

@@ -56,17 +56,23 @@ async function findSources(titles: string[], epNumber: number): Promise<SourceRe
 
         // 2. HTML search fallback
         if (!animeSlug) {
-          const searchRes = await fetchResponse(
-            `${base}/?s=${encodeURIComponent(query)}`,
-            { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(5000) } as RequestInit,
-          );
-          if (searchRes.ok) {
+          const searchPaths = [
+            `/search/${encodeURIComponent(query).replace(/%20/g, '+')}/`,
+            `/?s=${encodeURIComponent(query)}`,
+          ];
+          for (const path of searchPaths) {
+            const searchRes = await fetchResponse(
+              `${base}${path}`,
+              { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(5000) } as RequestInit,
+            );
+            if (!searchRes.ok) continue;
+
             const searchHtml = await searchRes.text();
             const $ = loadHtml(searchHtml);
             $.find('a[href]').each((_: number, el: any) => {
               if (candidateWatchUrl || animeSlug) return;
               const href: string = el.attr?.('href') ?? '';
-              if (!href || !href.startsWith('http')) return;
+              if (!href || !/^https?:\/\//i.test(href)) return;
               if (href.includes('/category/') || href.includes('/tag/') || href.includes('/az-list/')) return;
               const m = href.match(/\/(?:anime|series|watch)\/([^/]+)\/?$/) || href.match(/desidubanime\.me\/([^/]+)\/?$/) || href.match(/desidub\.com\/([^/]+)\/?$/);
               if (m && m[1] && !['search', 'disclaimer', 'dmca', 'page'].includes(m[1])) {
@@ -74,6 +80,7 @@ async function findSources(titles: string[], epNumber: number): Promise<SourceRe
                 candidateWatchUrl = href;
               }
             });
+            if (animeSlug || candidateWatchUrl) break;
           }
         }
 
