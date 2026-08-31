@@ -87,7 +87,18 @@ const MAX_CACHE_SIZE = 200;
 const cache = new Map(); // key → { data, expiresAt }
 
 function cacheKey(type, opts) {
-  return `${type}:${opts.anilistId}:${opts.episode}:${opts.resolution}:${(opts.preferredLanguages || []).join(',')}`;
+  const providerOptions = opts.providerOptions || {};
+  return [
+    type,
+    opts.anilistId,
+    opts.episode,
+    opts.resolution,
+    (opts.preferredLanguages || []).join(','),
+    providerOptions.maxConcurrency ?? '',
+    providerOptions.maxRetries ?? '',
+    providerOptions.retryDelayMs ?? '',
+    providerOptions.timeoutMs ?? '',
+  ].join(':');
 }
 
 function cacheGet(key) {
@@ -342,7 +353,10 @@ async function optionsFromReq(req) {
   const extraTitles = callerTitles.filter(t => t && !seen.has(t.toLowerCase()));
   const titles = [...anilistTitles, ...extraTitles];
 
-  const providerOptions = { timeoutMs: 15_000 };
+  // A large fan-out causes several catalogue hosts to throttle or challenge
+  // requests from the same client. Keep the API conservative by default while
+  // still allowing callers to opt into a different runner setting.
+  const providerOptions = { maxConcurrency: 2, timeoutMs: 15_000 };
   for (const key of ['maxConcurrency', 'maxRetries', 'retryDelayMs', 'timeoutMs']) {
     const raw = req.query[key];
     if (raw == null || raw === '') continue;

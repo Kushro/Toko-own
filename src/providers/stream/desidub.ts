@@ -22,6 +22,42 @@ function extractEmbedUrl(value: string): string {
   return iframe?.[2]?.trim() || value.trim();
 }
 
+function extractAjaxEpisodeUrl(
+  html: string,
+  base: string,
+  query: string,
+  epNumber: number,
+): string | null {
+  const $ = loadHtml(html);
+  const candidates: Array<{ url: string; title: string; order: number }> = [];
+
+  $('article').each((index: number, article: any) => {
+    const title =
+      $(article).find('h3 span').first().text().trim() ||
+      $(article).find('h3').first().text().trim();
+    let episodeSlug: string | null = null;
+
+    $(article).find('a[href]').each((_: number, anchor: any) => {
+      if (episodeSlug) return;
+      const href = String($(anchor).attr('href') ?? '').trim();
+      const match = href.match(/\/watch\/([^/]+)-episode-(\d+)\/?$/i);
+      if (match?.[1]) episodeSlug = match[1];
+    });
+
+    if (episodeSlug) {
+      candidates.push({
+        url: `${base}/watch/${episodeSlug}-episode-${epNumber}/`,
+        title,
+        order: index,
+      });
+    }
+  });
+
+  return candidates
+    .sort((a, b) => scoreMatch(query, b.title) - scoreMatch(query, a.title) || a.order - b.order)
+    .map(candidate => candidate.url)[0] ?? null;
+}
+
 async function findSources(titles: string[], epNumber: number): Promise<SourceResult[]> {
   const bases = [BASE_URL];
   for (const query of buildSearchQueries(titles)) {
@@ -56,6 +92,37 @@ async function findSources(titles: string[], epNumber: number): Promise<SourceRe
 
         // 2. HTML search fallback
         if (!animeSlug) {
+          // KiraAnime's current search UI renders results through this AJAX
+          // action. The normal /search/ page contains no result anchors until
+          // JavaScript submits the form.
+          try {
+            const ajaxRes = await fetchResponse(
+              `${base}/wp-admin/admin-ajax.php`,
+              {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                  'User-Agent': UA,
+                },
+                body: `action=advanced_search&s_keyword=${encodeURIComponent(query)}`,
+                signal: AbortSignal.timeout(5000),
+              } as RequestInit,
+            );
+            if (ajaxRes.ok) {
+              const payload = await ajaxRes.json() as any;
+              const ajaxHtml = typeof payload?.data === 'string'
+                ? payload.data
+                : typeof payload?.data?.html === 'string'
+                  ? payload.data.html
+                  : '';
+              if (payload?.success && ajaxHtml) {
+                candidateWatchUrl = extractAjaxEpisodeUrl(ajaxHtml, base, query, epNumber);
+              }
+            }
+          } catch { /* fallback to the rendered search page */ }
+        }
+
+        if (!animeSlug && !candidateWatchUrl) {
           const searchPaths = [
             `/search/${encodeURIComponent(query).replace(/%20/g, '+')}/`,
             `/?s=${encodeURIComponent(query)}`,
