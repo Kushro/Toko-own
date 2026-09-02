@@ -35,6 +35,12 @@ async function main(): Promise<void> {
     // Exclude Node built-ins so the bundle remains portable inside the worker sandbox.
     external: [
       'node:*',
+      // The Cloudflare bypass loads this lazily at runtime (see cf-bypass.ts).
+      // It must stay external: it carries native bindings and dynamic requires
+      // that do not survive bundling, and the worker sandbox has no way to run
+      // a browser anyway — there the lazy load simply fails and the bypass
+      // degrades to plain fetch.
+      'puppeteer-real-browser',
       'fs',
       'path',
       'os',

@@ -38,6 +38,12 @@ import animeblkom from './stream/animeblkom.js';
 import desidub from './stream/desidub.js';
 import moviebox from './stream/moviebox.js';
 
+// ── Nuvio providers — Latino (18), Hindi (13), Multi-dub (11) ─────────────────
+import { FRENCH_PROVIDERS } from './stream/nuvio/french/index.js';
+import { LATINO_PROVIDERS } from './stream/nuvio/latino/index.js';
+import { HINDI_PROVIDERS }  from './stream/nuvio/hindi/index.js';
+import { MULTIDUB_PROVIDERS } from './stream/nuvio/multidub/index.js';
+
 export const STREAM_PROVIDERS: StreamProvider[] = [
   nebula,
   animepahe,
@@ -55,6 +61,12 @@ export const STREAM_PROVIDERS: StreamProvider[] = [
   animeblkom,
   desidub,
   moviebox,
+  // Nuvio provider groups — appended after native providers so the fast anime
+  // providers always answer first; these scrapers are slower by design.
+  ...FRENCH_PROVIDERS,
+  ...LATINO_PROVIDERS,
+  ...HINDI_PROVIDERS,
+  ...MULTIDUB_PROVIDERS,
 ];
 
 // ── Torrent providers ─────────────────────────────────────────────────────────
