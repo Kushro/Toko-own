@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { accessSync, constants, existsSync, readdirSync, statSync } from 'node:fs';
 import nodePath from 'node:path';
+import os from 'node:os';
 
 type BootstrapResult = {
   hasXvfb: boolean;
@@ -10,9 +11,13 @@ type BootstrapResult = {
 const isLinux = process.platform === 'linux';
 const isWindows = process.platform === 'win32';
 const isMac = process.platform === 'darwin';
-const AUTO_INSTALL_ENABLED = String(process.env.CF_BYPASS_AUTO_INSTALL || 'true').toLowerCase() !== 'false';
+// Downloading and running a browser is opt-in: CF_BYPASS_AUTO_INSTALL=true.
+// The installer package is pinned (same version the lockfile resolves) so a
+// compromised or broken latest release can't run here unannounced.
+const AUTO_INSTALL_ENABLED = String(process.env.CF_BYPASS_AUTO_INSTALL || 'false').toLowerCase() === 'true';
+const BROWSERS_INSTALLER = '@puppeteer/browsers@2.6.1';
 const LOCAL_BROWSER_CACHE_DIR =
-  process.env.CF_BYPASS_BROWSER_CACHE_DIR || nodePath.join(process.cwd(), '.cache', 'browser-runtime');
+  process.env.CF_BYPASS_BROWSER_CACHE_DIR || nodePath.join(os.homedir(), '.cache', 'tatakai-browser-runtime');
 
 const CHROME_CANDIDATES = [
   'google-chrome-stable',
@@ -130,7 +135,7 @@ const runPortableBrowserInstall = (): boolean => {
     npxCommand,
     [
       '-y',
-      '@puppeteer/browsers',
+      BROWSERS_INSTALLER,
       'install',
       'chrome@stable',
       '--path',

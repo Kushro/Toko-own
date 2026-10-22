@@ -23,6 +23,7 @@ import type {
 import { loadHtml } from '../../utils/http/fetch.js';
 import { fetchTextWithBypass } from '../../utils/common/fetch-bypass.js';
 import { resolveMangaTitles, pickBestMangaCandidate } from '../../utils/manga/manga-title-resolver.js';
+import { providerUrl } from '../../utils/http/safe-url.js';
 
 const BASE = 'https://www.nelomanga.net';
 const PROVIDER_NAME = 'nelomanga';
@@ -128,8 +129,9 @@ const provider: MangaProvider = {
   async getPages(chapterKey: string): Promise<MangaPageEntry[]> {
     try {
       const colonIdx = chapterKey.indexOf(':');
-      const url = colonIdx >= 0 ? chapterKey.slice(colonIdx + 1) : chapterKey;
-      if (!url.startsWith('http')) return [];
+      // Only this site's own chapter URLs: the key comes from the API caller.
+      const url = providerUrl(colonIdx >= 0 ? chapterKey.slice(colonIdx + 1) : chapterKey, BASE);
+      if (!url) return [];
 
       const html = await fetchTextWithBypass(url, { timeoutMs: 20000 });
       if (!html) return [];

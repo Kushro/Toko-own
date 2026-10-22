@@ -2,3 +2,6 @@ kind: wasmer.io/App.v0
 name: toko-api
 owner: <YOUR-NAME>
 package: ./wasmer.toml
+# The API defaults to loopback; a hosted deployment must listen publicly.
+env:
+  TOKO_API_HOST: 0.0.0.0

@@ -336,6 +336,16 @@
     "network:domain:www.re-library.com",
     "network:domain:re-library.com",
     "network:domain:woopread.com",
-    "network:domain:ncode.syosetu.com"
+    "network:domain:ncode.syosetu.com",
+    "network:domain:api.ani.zip",
+    "network:domain:my.mail.ru",
+    "network:domain:fsvid.lol",
+    "network:domain:vidzy.live",
+    "network:domain:vidoza.net",
+    "network:domain:younetu.org",
+    "network:domain:lecteurvideo.com",
+    "network:domain:up4fun.top",
+    "network:domain:www.novelbuddy.com",
+    "network:domain:www.novelbuddy.me"
   ]
 }

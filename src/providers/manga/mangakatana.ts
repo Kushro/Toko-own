@@ -19,6 +19,7 @@ import type {
 
 import { fetchText, loadHtml } from '../../utils/http/fetch.js';
 import { resolveMangaTitles, pickBestMangaCandidate } from '../../utils/manga/manga-title-resolver.js';
+import { providerUrl } from '../../utils/http/safe-url.js';
 
 const BASE = 'https://mangakatana.com';
 const PROVIDER_NAME = 'mangakatana';
@@ -146,8 +147,9 @@ const provider: MangaProvider = {
   async getPages(chapterKey: string): Promise<MangaPageEntry[]> {
     try {
       const colonIdx = chapterKey.indexOf(':');
-      const url = colonIdx >= 0 ? chapterKey.slice(colonIdx + 1) : chapterKey;
-      if (!url.startsWith('http')) return [];
+      // Only this site's own chapter URLs: the key comes from the API caller.
+      const url = providerUrl(colonIdx >= 0 ? chapterKey.slice(colonIdx + 1) : chapterKey, BASE);
+      if (!url) return [];
 
       const html = await fetchText(url, { timeoutMs: 15000 });
       if (!html) return [];

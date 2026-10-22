@@ -171,6 +171,16 @@ Wasmer supplies the `PORT` environment variable at runtime. The API bootstrap
 installs the API's production dependencies on first start, and the health check
 is available at `/api/v3/health`.
 
+Exposure (see `api/src/security.js`): the API listens on `127.0.0.1` unless
+`TOKO_API_HOST` is set (`app.yaml` sets `0.0.0.0` for Wasmer). Browser calls are
+accepted from loopback origins plus `TOKO_API_CORS_ORIGINS` (comma-separated, or `*`).
+`/debug`, `/reload` and the cache routes answer loopback clients only, or anyone
+sending `X-Admin-Token: $TOKO_API_ADMIN_TOKEN` when that variable is set.
+
+The Cloudflare bypass no longer downloads Chrome on its own: install Chrome/Chromium
+or set `CF_BYPASS_AUTO_INSTALL=true` (pinned `@puppeteer/browsers`). Chrome keeps its
+sandbox unless it runs as root on Linux or `CF_BYPASS_NO_SANDBOX=true`.
+
 ## Novel sources (4.3.2)
 
 Automatic AniList title matching now also searches NovelFull, NovelFire,

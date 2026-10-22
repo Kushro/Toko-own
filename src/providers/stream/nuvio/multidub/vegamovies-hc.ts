@@ -18,6 +18,7 @@ import {
   HI_ACCEPT_LANGUAGE,
   PROVIDER_BUDGET_MS,
 } from '../shared.js';
+import { mirrorBase } from '../../../../utils/http/safe-url.js';
 
 // Old `vegamovies.market` 301-chains to 1vegamovies.lat (verified live); the
 // codeberg manifest overrides cachedBase at runtime anyway.
@@ -41,7 +42,7 @@ const MOBILE_HEADERS = {
 async function refreshDomains(signal: AbortSignal): Promise<void> {
   if (Date.now() - lastRefresh < 4 * 3600_000) return;
   const data = await siteFetchJson<{ vegamovies?: string }>(DOMAINS_URL, { timeoutMs: 6_000, signal }).catch(() => null);
-  if (data?.vegamovies) cachedBase = data.vegamovies;
+  cachedBase = mirrorBase(data?.vegamovies, /vegamovies/) ?? cachedBase;
   lastRefresh = Date.now();
 }
 
