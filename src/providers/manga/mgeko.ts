@@ -38,6 +38,7 @@ import type {
 import { loadHtml } from '../../utils/http/fetch.js';
 import { fetchTextWithBypass } from '../../utils/common/fetch-bypass.js';
 import { resolveMangaTitles, pickBestMangaCandidate } from '../../utils/manga/manga-title-resolver.js';
+import { providerUrl } from '../../utils/http/safe-url.js';
 
 const BASE = 'https://www.mgeko.cc';
 const PROVIDER_NAME = 'mgeko';
@@ -145,9 +146,9 @@ const provider: MangaProvider = {
       const path = colonIdx >= 0 ? chapterKey.slice(colonIdx + 1) : chapterKey;
       if (!path) return [];
 
-      const url = path.startsWith('http')
-        ? path
-        : `${BASE}${path.startsWith('/') ? '' : '/'}${path}`;
+      // Relative paths resolve against BASE; absolute ones must stay on this site.
+      const url = providerUrl(path.startsWith('http') ? path : `${BASE}${path.startsWith('/') ? '' : '/'}${path}`, BASE);
+      if (!url) return [];
       const html = await fetchTextWithBypass(url, { timeoutMs: 15000 });
       if (!html) return [];
       const $ = loadHtml(html);

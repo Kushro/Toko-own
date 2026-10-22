@@ -26,6 +26,7 @@ import type {
 
 import { fetchJson, fetchText, loadHtml } from '../../utils/http/fetch.js';
 import { resolveMangaTitles, pickBestMangaCandidate } from '../../utils/manga/manga-title-resolver.js';
+import { providerUrl } from '../../utils/http/safe-url.js';
 
 const BASE = 'https://www.webtoons.com';
 const MOBILE = 'https://m.webtoons.com';
@@ -155,7 +156,9 @@ const provider: MangaProvider = {
       const path = colonIdx >= 0 ? chapterKey.slice(colonIdx + 1) : chapterKey;
       if (!path) return [];
 
-      const url = path.startsWith('http') ? path : `${BASE}${path}`;
+      // Relative paths resolve against BASE; absolute ones must stay on webtoons.com.
+      const url = providerUrl(path.startsWith('http') ? path : `${BASE}${path}`, BASE);
+      if (!url) return [];
       const html = await fetchText(url, { timeoutMs: 15000 });
       if (!html) return [];
       const $ = loadHtml(html);

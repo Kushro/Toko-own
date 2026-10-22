@@ -17,6 +17,7 @@ import {
   HI_ACCEPT_LANGUAGE,
   PROVIDER_BUDGET_MS,
 } from '../shared.js';
+import { mirrorBase } from '../../../../utils/http/safe-url.js';
 
 const DEFAULT_SITE = 'https://4khdhub.one';
 const DOMAINS_URL  = 'https://codeberg.org/eclipsia-404/eclipsia/raw/branch/main/urls.json';
@@ -31,7 +32,7 @@ let lastRefresh = 0;
 async function refreshDomains(signal: AbortSignal): Promise<void> {
   if (Date.now() - lastRefresh < 4 * 3600_000) return;
   const data = await siteFetchJson<{ '4khdhub'?: string }>(DOMAINS_URL, { timeoutMs: 6_000, signal }).catch(() => null);
-  if (data?.['4khdhub']) cachedBase = data['4khdhub'];
+  cachedBase = mirrorBase(data?.['4khdhub'], /4khdhub/) ?? cachedBase;
   lastRefresh = Date.now();
 }
 

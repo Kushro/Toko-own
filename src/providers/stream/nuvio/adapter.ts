@@ -29,6 +29,7 @@ import type {
   LanguageCapability,
 } from '../../../types/index.js';
 import { resolveTmdbTarget } from '../../../utils/mapping/anizip.js';
+import { isPrivateHost } from '../../../utils/http/safe-url.js';
 
 /**
  * A stream as the upstream providers emit it.
@@ -317,10 +318,19 @@ function inferSourceType(
   return 'custom';
 }
 
-/** Placeholder media that some sites serve instead of a 404. */
+/**
+ * Placeholder media that some sites serve instead of a 404, plus anything that
+ * isn't a public http(s) URL — upstream proxies/decrypt services choose these
+ * URLs, so a loopback or LAN address must never reach the player or proxy.
+ */
 function isJunkUrl(url: string): boolean {
   const value = String(url || '').toLowerCase();
   if (!value || !/^https?:\/\//.test(value)) return true;
+  try {
+    if (isPrivateHost(new URL(value).hostname)) return true;
+  } catch {
+    return true;
+  }
   return (
     value.includes('big_buck_bunny') ||
     value.includes('bigbuckbunny') ||
@@ -338,7 +348,7 @@ function normalizeSubtitles(stream: NuvioStream): SubtitleTrack[] {
   const out: SubtitleTrack[] = [];
   for (const entry of raw) {
     const url = String(entry?.url || '').trim();
-    if (!url) continue;
+    if (!url || isJunkUrl(url)) continue;
     const language = String(entry?.language || entry?.lang || '').trim();
     out.push({
       url,

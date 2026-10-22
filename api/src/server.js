@@ -27,17 +27,19 @@ import express from 'express';
 import cors from 'cors';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { existsSync, copyFileSync, mkdirSync } from 'node:fs';
+import { existsSync, copyFileSync, mkdirSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import { createRequire } from 'node:module';
+import { createApiSecurity } from './security.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 
 const PORT = Number(process.env.PORT || process.env.TOKO_API_PORT || 8099);
-// Bind to all interfaces so managed/Replit workflows can detect and forward
-// the API port. Local callers can still opt into loopback with TOKO_API_HOST.
-const HOST = process.env.TOKO_API_HOST || '0.0.0.0';
+// Loopback by default; set TOKO_API_HOST=0.0.0.0 for hosted deployments
+// (Replit, Wasmer, containers). See security.js for CORS and admin settings.
+const security = createApiSecurity('TOKO_API');
+const HOST = security.host;
 
 // ── Bundle loading ────────────────────────────────────────────────────────────
 
@@ -63,6 +65,8 @@ function loadBundle() {
   copyFileSync(TOKO_BUNDLE_SRC, TOKO_BUNDLE);
 
   const mod = require(TOKO_BUNDLE);
+  // The module is loaded; drop the copy so reloads don't accumulate files in tmp.
+  try { rmSync(TOKO_BUNDLE, { force: true }); } catch { /* best effort */ }
   const Bundle = mod.default || mod;
   const instance = typeof Bundle === 'function' ? new Bundle() : Bundle;
   if (!instance || typeof instance.single !== 'function') {
@@ -641,7 +645,7 @@ function flattenNovelChapters(entries) {
 // ── Express app ───────────────────────────────────────────────────────────────
 
 const app = express();
-app.use(cors());
+app.use(cors(security.corsOptions));
 app.use(express.json({ limit: '2mb' }));
 
 // ── Health ────────────────────────────────────────────────────────────────────
@@ -918,7 +922,7 @@ async function handleDownloadRequest(req, res) {
 app.get(['/download/:anilistId/:episode', '/api/v3/toko/download/:anilistId/:episode'], handleDownloadRequest);
 
 /** GET /api/v3/toko/debug — raw diagnostics per provider */
-app.get('/api/v3/toko/debug', async (req, res) => {
+app.get('/api/v3/toko/debug', security.requireAdmin, async (req, res) => {
   const t = getToko();
   if (!t) return res.json({ results: [], diagnostics: [] });
   try {
@@ -1171,19 +1175,19 @@ app.get('/api/v3/toko/novel/search', async (req, res) => {
 app.get('/api/v3/toko/novel/content', handleNovelContent);
 
 // Cache management
-app.delete('/api/v3/toko/cache', (_req, res) => {
+app.delete('/api/v3/toko/cache', security.requireAdmin, (_req, res) => {
   const size = cache.size;
   cache.clear();
   anilistTitleCache.clear();
   res.json({ cleared: size });
 });
 
-app.get('/api/v3/toko/cache/stats', (_req, res) => {
+app.get('/api/v3/toko/cache/stats', security.requireAdmin, (_req, res) => {
   res.json({ size: cache.size, maxSize: MAX_CACHE_SIZE });
 });
 
 // Hot-reload the bundle without restarting the server
-app.post('/api/v3/toko/reload', (_req, res) => {
+app.post('/api/v3/toko/reload', security.requireAdmin, (_req, res) => {
   try {
     const prev = toko;
     toko = null; // force re-load

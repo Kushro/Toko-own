@@ -16,6 +16,7 @@ import {
   HI_ACCEPT_LANGUAGE,
   PROVIDER_BUDGET_MS,
 } from '../shared.js';
+import { mirrorBase } from '../../../../utils/http/safe-url.js';
 
 const SITE = 'https://tv.imgcdn.kim';
 const CONFIG_URL = 'https://raw.githubusercontent.com/SaurabhKaperwan/Utils/refs/heads/main/urls.json';
@@ -36,7 +37,7 @@ async function getApiBase(ctx: NuvioContext): Promise<string> {
     timeoutMs: 6_000,
     signal: ctx.signal,
   });
-  cachedApiBase = data?.nfmirror ?? FALLBACK_API;
+  cachedApiBase = mirrorBase(data?.nfmirror, /imgcdn|nfmirror|netmirror/) ?? FALLBACK_API;
   return cachedApiBase;
 }
 

@@ -30,6 +30,7 @@ import type {
 import { loadHtml } from '../../utils/http/fetch.js';
 import { fetchNovelSearchHtml } from './novel-http.js';
 import { resolveMangaTitles, pickBestMangaCandidate } from '../../utils/manga/manga-title-resolver.js';
+import { providerUrl } from '../../utils/http/safe-url.js';
 
 const BASE = 'https://www.divinedaolibrary.com';
 const PROVIDER_NAME = 'divinedaolibrary';
@@ -202,7 +203,9 @@ const provider: NovelProvider = {
       const prefix = `${PROVIDER_NAME}:`;
       if (!chapterKey.startsWith(prefix)) return null;
       const url = decodeURIComponent(chapterKey.slice(prefix.length));
-      if (!url.startsWith(BASE) || !/\/story\/[^/]+\/[^/]+\//.test(new URL(url).pathname)) return null;
+      // providerUrl compares hosts, unlike a prefix check that would also
+      // accept https://www.divinedaolibrary.com.attacker.example/.
+      if (!providerUrl(url, BASE) || !/\/story\/[^/]+\/[^/]+\//.test(new URL(url).pathname)) return null;
       const html = await fetchNovelSearchHtml(url, { timeoutMs: 15000 });
       if (!html) return null;
       const $ = loadHtml(html);

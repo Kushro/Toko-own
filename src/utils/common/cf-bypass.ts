@@ -100,6 +100,9 @@ const BYPASS_ENABLED =
   String(process.env.CF_BYPASS_ENABLED || 'true').toLowerCase() !== 'false';
 const HEADLESS =
   String(process.env.CF_BYPASS_HEADLESS || 'true').toLowerCase() !== 'false';
+const CHROME_NO_SANDBOX =
+  String(process.env.CF_BYPASS_NO_SANDBOX || '').toLowerCase() === 'true' ||
+  (process.platform === 'linux' && typeof process.getuid === 'function' && process.getuid() === 0);
 
 /**
  * Body/status signatures of an unsolved challenge.
@@ -290,8 +293,10 @@ async function solveChallenge(
       connectOption: { defaultViewport: null },
       disableXvfb: !hasXvfb,
       args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
+        // The pages loaded here are untrusted; keep Chrome's sandbox on. It
+        // can't start as root on Linux (containers), and CF_BYPASS_NO_SANDBOX
+        // is the explicit opt-out for other environments that lack it.
+        ...(CHROME_NO_SANDBOX ? ['--no-sandbox', '--disable-setuid-sandbox'] : []),
         '--disable-dev-shm-usage',
         '--disable-blink-features=AutomationControlled',
       ],

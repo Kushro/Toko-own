@@ -28,6 +28,7 @@ import {
   PROVIDER_BUDGET_MS,
   NUVIO_UA,
 } from '../shared.js';
+import { mirrorBase } from '../../../../utils/http/safe-url.js';
 
 const DEFAULT_SITE = 'https://vegamovies.gallery';
 const DOMAINS_URL  = 'https://raw.githubusercontent.com/SaurabhKaperwan/Utils/refs/heads/main/urls.json';
@@ -54,7 +55,7 @@ async function refreshDomains(signal: AbortSignal): Promise<void> {
   const data = await siteFetchJson<{ vegamovies?: string }>(DOMAINS_URL, {
     timeoutMs: 6_000, signal,
   }).catch(() => null);
-  if (data?.vegamovies) cachedBase = data.vegamovies;
+  cachedBase = mirrorBase(data?.vegamovies, /vegamovies/) ?? cachedBase;
   lastRefresh = Date.now();
 }
 

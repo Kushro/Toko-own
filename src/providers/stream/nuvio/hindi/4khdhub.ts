@@ -18,6 +18,7 @@ import {
   PROVIDER_BUDGET_MS,
   NUVIO_UA,
 } from '../shared.js';
+import { mirrorBase } from '../../../../utils/http/safe-url.js';
 
 const SITE = 'https://4khdhub.one';
 const LABEL = '4KHDHub';
@@ -127,7 +128,7 @@ async function getMainUrl(signal: AbortSignal | null): Promise<string> {
       signal,
       timeoutMs: 8_000,
     });
-    const fromManifest = manifest?.['4khdhub'] ?? manifest?.['n4khdhub'] ?? '';
+    const fromManifest = mirrorBase(manifest?.['4khdhub'] ?? manifest?.['n4khdhub'], /4khdhub/) ?? '';
     if (fromManifest) {
       cachedMainUrl = fromManifest;
       cachedMainUrlTs = now;
