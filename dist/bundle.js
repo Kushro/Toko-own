@@ -45776,11 +45776,13 @@ function pickBestNovelCandidate(titles, candidates) {
 var import_node_child_process = require("node:child_process");
 var import_node_fs = require("node:fs");
 var import_node_path = __toESM(require("node:path"), 1);
+var import_node_os = __toESM(require("node:os"), 1);
 var isLinux = process.platform === "linux";
 var isWindows = process.platform === "win32";
 var isMac = process.platform === "darwin";
-var AUTO_INSTALL_ENABLED = String(process.env.CF_BYPASS_AUTO_INSTALL || "true").toLowerCase() !== "false";
-var LOCAL_BROWSER_CACHE_DIR = process.env.CF_BYPASS_BROWSER_CACHE_DIR || import_node_path.default.join(process.cwd(), ".cache", "browser-runtime");
+var AUTO_INSTALL_ENABLED = String(process.env.CF_BYPASS_AUTO_INSTALL || "false").toLowerCase() === "true";
+var BROWSERS_INSTALLER = "@puppeteer/browsers@2.6.1";
+var LOCAL_BROWSER_CACHE_DIR = process.env.CF_BYPASS_BROWSER_CACHE_DIR || import_node_path.default.join(import_node_os.default.homedir(), ".cache", "tatakai-browser-runtime");
 var CHROME_CANDIDATES = [
   "google-chrome-stable",
   "google-chrome",
@@ -45875,7 +45877,7 @@ var runPortableBrowserInstall = () => {
     npxCommand,
     [
       "-y",
-      "@puppeteer/browsers",
+      BROWSERS_INSTALLER,
       "install",
       "chrome@stable",
       "--path",
@@ -45955,6 +45957,7 @@ var SESSION_TTL_MS = 20 * 60 * 1e3;
 var DEFAULT_SOLVE_TIMEOUT_MS = 45e3;
 var BYPASS_ENABLED = String(process.env.CF_BYPASS_ENABLED || "true").toLowerCase() !== "false";
 var HEADLESS = String(process.env.CF_BYPASS_HEADLESS || "true").toLowerCase() !== "false";
+var CHROME_NO_SANDBOX = String(process.env.CF_BYPASS_NO_SANDBOX || "").toLowerCase() === "true" || process.platform === "linux" && typeof process.getuid === "function" && process.getuid() === 0;
 var CHALLENGE_MARKERS = [
   "cf-browser-verification",
   "cf_chl_opt",
@@ -46058,8 +46061,10 @@ async function solveChallenge(options) {
       connectOption: { defaultViewport: null },
       disableXvfb: !hasXvfb,
       args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
+        // The pages loaded here are untrusted; keep Chrome's sandbox on. It
+        // can't start as root on Linux (containers), and CF_BYPASS_NO_SANDBOX
+        // is the explicit opt-out for other environments that lack it.
+        ...CHROME_NO_SANDBOX ? ["--no-sandbox", "--disable-setuid-sandbox"] : [],
         "--disable-dev-shm-usage",
         "--disable-blink-features=AutomationControlled"
       ]
@@ -53914,6 +53919,54 @@ async function resolveTmdbTarget(options) {
   };
 }
 
+// src/utils/http/safe-url.ts
+var siteDomain = (base) => new URL(base).hostname.toLowerCase().replace(/^www\./, "");
+function providerUrl(raw, bases) {
+  const list = typeof bases === "string" ? [bases] : bases;
+  if (!raw || list.length === 0) return null;
+  let url;
+  try {
+    url = new URL(raw, list[0]);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+  if (url.username || url.password) return null;
+  const host = url.hostname.toLowerCase();
+  const allowed = list.some((base) => {
+    const domain = siteDomain(base);
+    return host === domain || host.endsWith(`.${domain}`);
+  });
+  return allowed ? url.href : null;
+}
+function mirrorBase(raw, brand) {
+  if (typeof raw !== "string" || !raw.trim()) return null;
+  let url;
+  try {
+    url = new URL(raw.trim());
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:" || url.username || url.password || url.port) return null;
+  const host = url.hostname.toLowerCase();
+  if (!host.includes(".") || host.includes(":") || /^[\d.]+$/.test(host)) return null;
+  if (!brand.test(host)) return null;
+  return url.href.replace(/\/$/, "");
+}
+function isPrivateHost(hostname) {
+  const host = String(hostname || "").toLowerCase().replace(/^\[|\]$/g, "");
+  if (!host || host === "localhost" || host.endsWith(".localhost")) return true;
+  const v4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (v4) {
+    const [a, b] = [Number(v4[1]), Number(v4[2])];
+    return a === 0 || a === 10 || a === 127 || a === 169 && b === 254 || a === 172 && b >= 16 && b <= 31 || a === 192 && b === 168 || a === 100 && b >= 64 && b <= 127 || a >= 224;
+  }
+  if (host.includes(":")) {
+    return host === "::" || host === "::1" || /^f[cd]/.test(host) || /^fe[89ab]/.test(host) || host.startsWith("::ffff:");
+  }
+  return false;
+}
+
 // src/providers/stream/nuvio/adapter.ts
 var DEFAULT_TIMEOUT_MS = 2e4;
 var QUALITY_TIERS = [2160, 1440, 1080, 720, 480, 360, 240];
@@ -54049,6 +54102,11 @@ function inferSourceType(url, declared) {
 function isJunkUrl(url) {
   const value = String(url || "").toLowerCase();
   if (!value || !/^https?:\/\//.test(value)) return true;
+  try {
+    if (isPrivateHost(new URL(value).hostname)) return true;
+  } catch {
+    return true;
+  }
   return value.includes("big_buck_bunny") || value.includes("bigbuckbunny") || value.includes("test-videos.co.uk") || value.includes("sample-videos.com") || value.includes("/troll/") || value.includes("example.com") || value.includes("localhost");
 }
 function normalizeSubtitles(stream) {
@@ -54057,7 +54115,7 @@ function normalizeSubtitles(stream) {
   const out = [];
   for (const entry of raw) {
     const url = String(entry?.url || "").trim();
-    if (!url) continue;
+    if (!url || isJunkUrl(url)) continue;
     const language = String(entry?.language || entry?.lang || "").trim();
     out.push({
       url,
@@ -63320,7 +63378,7 @@ async function getMainUrl(signal) {
       signal,
       timeoutMs: 8e3
     });
-    const fromManifest = manifest?.["4khdhub"] ?? manifest?.["n4khdhub"] ?? "";
+    const fromManifest = mirrorBase(manifest?.["4khdhub"] ?? manifest?.["n4khdhub"], /4khdhub/) ?? "";
     if (fromManifest) {
       cachedMainUrl = fromManifest;
       cachedMainUrlTs = now;
@@ -64083,7 +64141,7 @@ async function getApiBase(ctx) {
     timeoutMs: 6e3,
     signal: ctx.signal
   });
-  cachedApiBase = data2?.nfmirror ?? FALLBACK_API;
+  cachedApiBase = mirrorBase(data2?.nfmirror, /imgcdn|nfmirror|netmirror/) ?? FALLBACK_API;
   return cachedApiBase;
 }
 async function extractService(apiBase, service, title, ctx, season, episode) {
@@ -64244,7 +64302,7 @@ async function refreshDomains(signal) {
     timeoutMs: 6e3,
     signal
   }).catch(() => null);
-  if (data2?.vegamovies) cachedBase = data2.vegamovies;
+  cachedBase = mirrorBase(data2?.vegamovies, /vegamovies/) ?? cachedBase;
   lastRefresh = Date.now();
 }
 async function searchByTitle2(query, base, ctx) {
@@ -64398,7 +64456,7 @@ var lastRefresh2 = 0;
 async function refreshDomains2(signal) {
   if (Date.now() - lastRefresh2 < 4 * 36e5) return;
   const data2 = await siteFetchJson(DOMAINS_URL3, { timeoutMs: 6e3, signal }).catch(() => null);
-  if (data2?.["4khdhub"]) cachedBase2 = data2["4khdhub"];
+  cachedBase2 = mirrorBase(data2?.["4khdhub"], /4khdhub/) ?? cachedBase2;
   lastRefresh2 = Date.now();
 }
 function parseQuality3(text3) {
@@ -64921,7 +64979,7 @@ var MOBILE_HEADERS2 = {
 async function refreshDomains3(signal) {
   if (Date.now() - lastRefresh3 < 4 * 36e5) return;
   const data2 = await siteFetchJson(DOMAINS_URL4, { timeoutMs: 6e3, signal }).catch(() => null);
-  if (data2?.vegamovies) cachedBase3 = data2.vegamovies;
+  cachedBase3 = mirrorBase(data2?.vegamovies, /vegamovies/) ?? cachedBase3;
   lastRefresh3 = Date.now();
 }
 function isStreamable2(url) {
@@ -66345,8 +66403,8 @@ var provider32 = {
   async getPages(chapterKey) {
     try {
       const colonIdx = chapterKey.indexOf(":");
-      const url = colonIdx >= 0 ? chapterKey.slice(colonIdx + 1) : chapterKey;
-      if (!url.startsWith("http")) return [];
+      const url = providerUrl(colonIdx >= 0 ? chapterKey.slice(colonIdx + 1) : chapterKey, BASE13);
+      if (!url) return [];
       const html3 = await fetchText(url, { timeoutMs: 15e3 });
       if (!html3) return [];
       const arr = html3.match(/var\s+thzq\s*=\s*(\[[^\]]*\])/);
@@ -66550,8 +66608,8 @@ var provider34 = {
   async getPages(chapterKey) {
     try {
       const colonIdx = chapterKey.indexOf(":");
-      const url = colonIdx >= 0 ? chapterKey.slice(colonIdx + 1) : chapterKey;
-      if (!url.startsWith("http")) return [];
+      const url = providerUrl(colonIdx >= 0 ? chapterKey.slice(colonIdx + 1) : chapterKey, BASE15);
+      if (!url) return [];
       const html3 = await fetchTextWithBypass(url, { timeoutMs: 2e4 });
       if (!html3) return [];
       const $2 = loadHtml(html3);
@@ -66764,7 +66822,8 @@ var provider36 = {
       const colonIdx = chapterKey.indexOf(":");
       const path = colonIdx >= 0 ? chapterKey.slice(colonIdx + 1) : chapterKey;
       if (!path) return [];
-      const url = path.startsWith("http") ? path : `${BASE17}${path}`;
+      const url = providerUrl(path.startsWith("http") ? path : `${BASE17}${path}`, BASE17);
+      if (!url) return [];
       const html3 = await fetchText(url, { timeoutMs: 15e3 });
       if (!html3) return [];
       const $2 = loadHtml(html3);
@@ -66987,8 +67046,8 @@ var provider38 = {
   async getPages(chapterKey) {
     try {
       const colonIdx = chapterKey.indexOf(":");
-      const url = colonIdx >= 0 ? chapterKey.slice(colonIdx + 1) : chapterKey;
-      if (!url.startsWith("http")) return [];
+      const url = providerUrl(colonIdx >= 0 ? chapterKey.slice(colonIdx + 1) : chapterKey, BASE19);
+      if (!url) return [];
       const html3 = await fetchTextWithBypass(url, { timeoutMs: 2e4 });
       if (!html3) return [];
       const $2 = loadHtml(html3);
@@ -67124,8 +67183,8 @@ var provider39 = {
   async getPages(chapterKey) {
     try {
       const colonIdx = chapterKey.indexOf(":");
-      const url = colonIdx >= 0 ? chapterKey.slice(colonIdx + 1) : chapterKey;
-      if (!url.startsWith("http")) return [];
+      const url = providerUrl(colonIdx >= 0 ? chapterKey.slice(colonIdx + 1) : chapterKey, BASE20);
+      if (!url) return [];
       const html3 = await fetchTextWithBypass(url, { timeoutMs: 2e4 });
       if (!html3) return [];
       const $2 = loadHtml(html3);
@@ -67261,8 +67320,8 @@ var provider40 = {
   async getPages(chapterKey) {
     try {
       const colonIdx = chapterKey.indexOf(":");
-      const url = colonIdx >= 0 ? chapterKey.slice(colonIdx + 1) : chapterKey;
-      if (!url.startsWith("http")) return [];
+      const url = providerUrl(colonIdx >= 0 ? chapterKey.slice(colonIdx + 1) : chapterKey, BASE21);
+      if (!url) return [];
       const html3 = await fetchTextWithBypass(url, { timeoutMs: 2e4 });
       if (!html3) return [];
       const $2 = loadHtml(html3);
@@ -67361,7 +67420,8 @@ var provider41 = {
       const colonIdx = chapterKey.indexOf(":");
       const path = colonIdx >= 0 ? chapterKey.slice(colonIdx + 1) : chapterKey;
       if (!path) return [];
-      const url = path.startsWith("http") ? path : `${BASE22}${path.startsWith("/") ? "" : "/"}${path}`;
+      const url = providerUrl(path.startsWith("http") ? path : `${BASE22}${path.startsWith("/") ? "" : "/"}${path}`, BASE22);
+      if (!url) return [];
       const html3 = await fetchTextWithBypass(url, { timeoutMs: 15e3 });
       if (!html3) return [];
       const $2 = loadHtml(html3);
@@ -68571,7 +68631,7 @@ var provider49 = {
       const prefix = `${PROVIDER_NAME20}:`;
       if (!chapterKey.startsWith(prefix)) return null;
       const url = decodeURIComponent(chapterKey.slice(prefix.length));
-      if (!url.startsWith(BASE29) || !/\/story\/[^/]+\/[^/]+\//.test(new URL(url).pathname)) return null;
+      if (!providerUrl(url, BASE29) || !/\/story\/[^/]+\/[^/]+\//.test(new URL(url).pathname)) return null;
       const html3 = await fetchNovelSearchHtml(url, { timeoutMs: 15e3 });
       if (!html3) return null;
       const $2 = loadHtml(html3);
