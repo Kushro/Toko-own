@@ -22,6 +22,16 @@ const ROOT = path.resolve(
 );
 const DIST = path.join(ROOT, 'dist');
 
+// cheerio pulls in undici only for fromURL(), which the extension never calls. The real client needs
+// node:net, tls, worker_threads and sqlite, which the native Tatakai host does not provide, so it is
+// replaced by a stub that throws if anything ever reaches it.
+const stubUndici: esbuild.Plugin = {
+  name: 'stub-undici',
+  setup(build) {
+    build.onResolve({ filter: /^undici$/ }, () => ({ path: path.join(ROOT, 'src', 'shims', 'undici-stub.ts') }));
+  },
+};
+
 async function main(): Promise<void> {
   // ── Step 1: Bundle ─────────────────────────────────────────────────────────
   fs.mkdirSync(DIST, { recursive: true });
@@ -39,6 +49,7 @@ async function main(): Promise<void> {
       'events', 'http', 'https', 'net', 'tls', 'zlib', 'buffer',
       'child_process', 'worker_threads',
     ],
+    plugins: [stubUndici],
     minify: false,
     sourcemap: false,
   });
