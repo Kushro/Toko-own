@@ -1,7 +1,26 @@
-import { spawnSync } from 'node:child_process';
-import { accessSync, constants, existsSync, readdirSync, statSync } from 'node:fs';
 import nodePath from 'node:path';
-import os from 'node:os';
+
+// child_process, fs and os are loaded on first use through a non-literal require. The native Tatakai host runs
+// extensions without them: there the bypass reports no browser instead of the whole extension being refused.
+type NodeBuiltins = {
+  cp: typeof import('node:child_process');
+  fs: typeof import('node:fs');
+  os: typeof import('node:os');
+};
+let builtins: NodeBuiltins | null | undefined;
+const loadBuiltins = (): NodeBuiltins | null => {
+  if (builtins === undefined) {
+    try {
+      const load = (name: string) => require('node:' + name);
+      builtins = { cp: load('child_process'), fs: load('fs'), os: load('os') };
+    } catch {
+      builtins = null;
+    }
+  }
+  return builtins;
+};
+// Only called after ensureBrowserRuntime checked that loadBuiltins() succeeded.
+const node = (): NodeBuiltins => loadBuiltins() as NodeBuiltins;
 
 type BootstrapResult = {
   hasXvfb: boolean;
@@ -16,8 +35,8 @@ const isMac = process.platform === 'darwin';
 // compromised or broken latest release can't run here unannounced.
 const AUTO_INSTALL_ENABLED = String(process.env.CF_BYPASS_AUTO_INSTALL || 'false').toLowerCase() === 'true';
 const BROWSERS_INSTALLER = '@puppeteer/browsers@2.6.1';
-const LOCAL_BROWSER_CACHE_DIR =
-  process.env.CF_BYPASS_BROWSER_CACHE_DIR || nodePath.join(os.homedir(), '.cache', 'tatakai-browser-runtime');
+const localBrowserCacheDir = (): string =>
+  process.env.CF_BYPASS_BROWSER_CACHE_DIR || nodePath.join(node().os.homedir(), '.cache', 'tatakai-browser-runtime');
 
 const CHROME_CANDIDATES = [
   'google-chrome-stable',
@@ -48,20 +67,20 @@ const commandExists = (command: string): boolean => {
   const isPathLike = command.includes('/') || command.includes('\\') || nodePath.isAbsolute(command);
   if (isPathLike) {
     try {
-      accessSync(command, isWindows ? constants.F_OK : constants.X_OK);
+      node().fs.accessSync(command, isWindows ? node().fs.constants.F_OK : node().fs.constants.X_OK);
       return true;
     } catch {
       return false;
     }
   }
   const locator = isWindows ? 'where' : 'which';
-  const probe = spawnSync(locator, [command], { encoding: 'utf8' });
+  const probe = node().cp.spawnSync(locator, [command], { encoding: 'utf8' });
   return probe.status === 0 && probe.stdout.trim().length > 0;
 };
 
 const resolveCommandPath = (command: string): string | null => {
   const locator = isWindows ? 'where' : 'which';
-  const probe = spawnSync(locator, [command], { encoding: 'utf8' });
+  const probe = node().cp.spawnSync(locator, [command], { encoding: 'utf8' });
   if (probe.status !== 0) return null;
   const lines = probe.stdout
     .split(/\r?\n/)
@@ -79,7 +98,7 @@ const resolveKnownWindowsChrome = (): string | null => {
 };
 
 const findExecutableRecursively = (root: string, executableNames: string[], maxDepth = 8): string | null => {
-  if (!existsSync(root)) return null;
+  if (!node().fs.existsSync(root)) return null;
 
   const visited = new Set<string>();
   const queue: Array<{ dir: string; depth: number }> = [{ dir: root, depth: 0 }];
@@ -92,7 +111,7 @@ const findExecutableRecursively = (root: string, executableNames: string[], maxD
 
     let entries: string[] = [];
     try {
-      entries = readdirSync(current.dir);
+      entries = node().fs.readdirSync(current.dir);
     } catch {
       continue;
     }
@@ -101,7 +120,7 @@ const findExecutableRecursively = (root: string, executableNames: string[], maxD
       const fullPath = nodePath.join(current.dir, entry);
       let stats;
       try {
-        stats = statSync(fullPath);
+        stats = node().fs.statSync(fullPath);
       } catch {
         continue;
       }
@@ -125,13 +144,13 @@ const findExecutableRecursively = (root: string, executableNames: string[], maxD
 };
 
 const resolvePortableInstalledChrome = (): string | null => {
-  return findExecutableRecursively(LOCAL_BROWSER_CACHE_DIR, PORTABLE_BROWSER_EXECUTABLE_NAMES, 10);
+  return findExecutableRecursively(localBrowserCacheDir(), PORTABLE_BROWSER_EXECUTABLE_NAMES, 10);
 };
 
 const runPortableBrowserInstall = (): boolean => {
   if (!AUTO_INSTALL_ENABLED) return false;
   const npxCommand = isWindows ? 'npx.cmd' : 'npx';
-  const install = spawnSync(
+  const install = node().cp.spawnSync(
     npxCommand,
     [
       '-y',
@@ -139,7 +158,7 @@ const runPortableBrowserInstall = (): boolean => {
       'install',
       'chrome@stable',
       '--path',
-      LOCAL_BROWSER_CACHE_DIR,
+      localBrowserCacheDir(),
     ],
     { stdio: 'ignore' }
   );
@@ -150,6 +169,10 @@ let bootstrapped: BootstrapResult | null = null;
 
 export const ensureBrowserRuntime = (): BootstrapResult => {
   if (bootstrapped) return bootstrapped;
+  if (!loadBuiltins()) {
+    bootstrapped = { hasXvfb: false, chromePath: null };
+    return bootstrapped;
+  }
 
   let hasXvfb = commandExists('Xvfb');
   let chromePath = (process.env.CHROME_PATH || '').trim();
