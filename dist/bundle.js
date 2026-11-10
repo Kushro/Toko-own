@@ -39501,7 +39501,7 @@ var provider23 = {
     const seen = /* @__PURE__ */ new Set();
     const results = [];
     for (const query of queries) {
-      if (results.length >= 20) break;
+      if (results.length >= 50) break;
       const items = await fetchRssItems(query);
       for (const item of items) {
         const torrentUrl = item.match(/<enclosure[^>]+url="([^"]+)"/)?.[1] ?? item.match(/<link>\s*(https?:\/\/[^<]+)\s*<\/link>/)?.[1] ?? "";
@@ -39549,7 +39549,7 @@ var provider23 = {
       if (ms !== 0) return ms;
       return (b.peers ?? 0) - (a.peers ?? 0);
     });
-    return results.slice(0, 20);
+    return results.slice(0, 50);
   }
 };
 var nyaa_default = provider23;
