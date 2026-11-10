@@ -8,6 +8,7 @@ import { normalizeQuality } from '../../utils/scraping/quality.js';
 import type { TorrentProvider, SourceOptions, SourceResult } from '../../types/index.js';
 import { fetchResponse } from '../../utils/http/fetch.js';
 import { scoreEpisodeMatch, isBatchTitle } from '../../utils/torrent/matcher.js';
+import { firstWithResults } from '../../utils/torrent/search-titles.js';
 
 interface SubPleaseDownload {
   res: string;
@@ -55,7 +56,13 @@ const provider: TorrentProvider = {
   name: 'subplease',
   sites: [BASE],
   async batch(opts: SourceOptions): Promise<SourceResult[]> {
-    const title = opts.titles[0] ?? '';
+    // Each short title in turn (the first one may be a long romaji that finds nothing).
+    return firstWithResults(opts.titles ?? [], title => searchOne(opts, title));
+  },
+};
+
+async function searchOne(opts: SourceOptions, title: string): Promise<SourceResult[]> {
+  {
     const ep = opts.episode ?? 0;
     if (!title) return [];
 
@@ -142,7 +149,7 @@ const provider: TorrentProvider = {
     });
 
     return results.slice(0, 10);
-  },
-};
+  }
+}
 
 export default provider;

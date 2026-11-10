@@ -18,6 +18,7 @@ import type { TorrentProvider, SourceOptions, SourceResult } from '../../types/i
 import { fetchJson } from '../../utils/http/fetch.js';
 import { buildMagnet, inferTorrentFileFormat } from '../../utils/torrent/matcher.js';
 import { scoreEpisodeMatch, isBatchTitle, scoreTitleMatch } from '../../utils/torrent/matcher.js';
+import { firstWithResults } from '../../utils/torrent/search-titles.js';
 
 const BASES = ['https://aniliberty.top', 'https://anilibria.top'];
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36';
@@ -71,7 +72,13 @@ const provider: TorrentProvider = {
   name: 'aniliberty',
   sites: BASES,
   async batch(opts: SourceOptions): Promise<SourceResult[]> {
-    const title = opts.titles[0] ?? '';
+    // Each short title in turn (the first one may be a long romaji that finds nothing).
+    return firstWithResults(opts.titles ?? [], title => searchOne(opts, title));
+  },
+};
+
+async function searchOne(opts: SourceOptions, title: string): Promise<SourceResult[]> {
+  {
     const ep = opts.episode ?? 0;
     if (!title) return [];
 
@@ -131,7 +138,7 @@ const provider: TorrentProvider = {
     }
 
     return results;
-  },
-};
+  }
+}
 
 export default provider;
