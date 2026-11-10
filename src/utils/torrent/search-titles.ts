@@ -32,3 +32,65 @@ export async function firstWithResults<T>(titles: string[], run: (title: string)
   }
   return [];
 }
+
+// ── Seasons ───────────────────────────────────────────────────────────────────
+// AniList lists each season as its own title ("... Part 2", "... Season 2", "... 2nd Season", "第二幕"), while
+// release names say "S02E03", "S2 - 03", "Season 2 - 03" or nothing at all. Searching with the bare title and
+// filtering on the release's season keeps season 1 episode 3 out of a season 2 episode 3 request.
+
+const KANJI_DIGITS: Record<string, number> = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
+const ROMAN: Record<string, number> = { II: 2, III: 3, IV: 4, V: 5, VI: 6 };
+
+const TITLE_SEASON: Array<[RegExp, (m: RegExpMatchArray) => number]> = [
+  [/\b(?:season|part|cour)\s*(\d{1,2})\b/i, m => parseInt(m[1], 10)],
+  [/\b(\d{1,2})(?:st|nd|rd|th)\s+(?:season|cour|part)\b/i, m => parseInt(m[1], 10)],
+  [/第\s*([0-9]{1,2}|[一二三四五六七八九十])\s*[期幕部]/, m => KANJI_DIGITS[m[1]] ?? parseInt(m[1], 10)],
+  [/\s(II|III|IV|V|VI)$/, m => ROMAN[m[1]]],
+];
+
+/** Season the titles name (2 for "... Part 2"), or `null` when none does (season 1 or a single-season show). */
+export function seasonOf(titles: string[]): number | null {
+  for (const t of titles) {
+    for (const [re, value] of TITLE_SEASON) {
+      const m = t.trim().match(re);
+      if (m) {
+        const n = value(m);
+        if (Number.isFinite(n) && n >= 1) return n;
+      }
+    }
+  }
+  return null;
+}
+
+/** The title without its season marker, for searching ("Foo Part 2" -> "Foo"). */
+export function stripSeason(title: string): string {
+  return title
+    .replace(/\b(?:season|part|cour)\s*\d{1,2}\b/gi, ' ')
+    .replace(/\b\d{1,2}(?:st|nd|rd|th)\s+(?:season|cour|part)\b/gi, ' ')
+    .replace(/第\s*(?:[0-9]{1,2}|[一二三四五六七八九十])\s*[期幕部]/g, ' ')
+    .replace(/\s(?:II|III|IV|V|VI)$/, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Season a release name states ("S02E03", "S2 - 03", "Season 2", "2nd Season"), or `null`. */
+export function releaseSeason(name: string): number | null {
+  const patterns = [
+    /\bS(\d{1,2})\s*E\d{1,4}\b/i,
+    /\bS(\d{1,2})\b(?=\s*[-–]\s*\d)/i,
+    /\bSeason\s*(\d{1,2})\b/i,
+    /\b(\d{1,2})(?:st|nd|rd|th)\s+Season\b/i,
+    /\bPart\s*(\d{1,2})\b/i,
+  ];
+  for (const re of patterns) {
+    const m = name.match(re);
+    if (m) return parseInt(m[1], 10);
+  }
+  return null;
+}
+
+/** A release that explicitly belongs to another season than `wanted` (null = season 1). */
+export function seasonMismatch(name: string, wanted: number | null): boolean {
+  const s = releaseSeason(name);
+  return s !== null && s !== (wanted ?? 1);
+}

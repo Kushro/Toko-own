@@ -10,7 +10,7 @@ import {
   buildMagnet,
   parseEpisodeFromTitle,
 } from '../../utils/torrent/matcher.js';
-import { searchTitles } from '../../utils/torrent/search-titles.js';
+import { searchTitles, seasonOf, stripSeason, releaseSeason, seasonMismatch } from '../../utils/torrent/search-titles.js';
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36';
 
@@ -46,7 +46,9 @@ const provider: TorrentProvider = {
   name: 'nyaa',
   sites: BASES,
   async batch(opts: SourceOptions): Promise<SourceResult[]> {
-    const titles = searchTitles(opts.titles ?? []);
+    // "... Part 2" is searched as the bare title plus SxxEyy; the season filter below keeps other seasons out.
+    const season = seasonOf(opts.titles ?? []);
+    const titles = searchTitles((opts.titles ?? []).map(stripSeason));
     const ep = opts.episode ?? 0;
     if (titles.length === 0) return [];
 
@@ -54,8 +56,11 @@ const provider: TorrentProvider = {
     // found it.
     const epPad3 = ep > 0 ? String(ep).padStart(3, '0') : '';
     const epPad2 = ep > 0 ? String(ep).padStart(2, '0') : '';
+    const ss = season ? String(season).padStart(2, '0') : '';
     const plan = titles.flatMap(animeTitle => (ep > 0
-      ? [`${animeTitle} - ${epPad2}`, `${animeTitle} ${epPad2}`, `${animeTitle} - ${epPad3}`, animeTitle]
+      ? (season && season > 1
+        ? [`${animeTitle} S${ss}E${epPad2}`, `${animeTitle} S${season} - ${epPad2}`, `${animeTitle} - ${epPad2}`, animeTitle]
+        : [`${animeTitle} - ${epPad2}`, `${animeTitle} ${epPad2}`, `${animeTitle} - ${epPad3}`, animeTitle])
       : [animeTitle]).map(query => ({ animeTitle, query })));
 
     const seen = new Set<string>();
@@ -102,6 +107,10 @@ const provider: TorrentProvider = {
         // Score this result
         const matchScore = scoreTorrentResult(torrentTitle, animeTitle, ep, seeders);
         if (ep > 0 && matchScore === 0) continue; // skip irrelevant results
+        // Another season said explicitly: out. For a later season the release must say so ("S02E03", "S2 - 03",
+        // "2nd Season"): an unmarked "Title - 03" is season 1 episode 3 under the same bare title.
+        if (ep > 0 && seasonMismatch(torrentTitle, season)) continue;
+        if (ep > 0 && season && season > 1 && releaseSeason(torrentTitle) === null) continue;
 
         seen.add(torrentTitle);
 

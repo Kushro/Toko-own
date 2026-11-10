@@ -39485,6 +39485,47 @@ async function firstWithResults(titles, run) {
   }
   return [];
 }
+var KANJI_DIGITS = { \u4E00: 1, \u4E8C: 2, \u4E09: 3, \u56DB: 4, \u4E94: 5, \u516D: 6, \u4E03: 7, \u516B: 8, \u4E5D: 9, \u5341: 10 };
+var ROMAN = { II: 2, III: 3, IV: 4, V: 5, VI: 6 };
+var TITLE_SEASON = [
+  [/\b(?:season|part|cour)\s*(\d{1,2})\b/i, (m) => parseInt(m[1], 10)],
+  [/\b(\d{1,2})(?:st|nd|rd|th)\s+(?:season|cour|part)\b/i, (m) => parseInt(m[1], 10)],
+  [/第\s*([0-9]{1,2}|[一二三四五六七八九十])\s*[期幕部]/, (m) => KANJI_DIGITS[m[1]] ?? parseInt(m[1], 10)],
+  [/\s(II|III|IV|V|VI)$/, (m) => ROMAN[m[1]]]
+];
+function seasonOf(titles) {
+  for (const t of titles) {
+    for (const [re, value] of TITLE_SEASON) {
+      const m = t.trim().match(re);
+      if (m) {
+        const n = value(m);
+        if (Number.isFinite(n) && n >= 1) return n;
+      }
+    }
+  }
+  return null;
+}
+function stripSeason(title2) {
+  return title2.replace(/\b(?:season|part|cour)\s*\d{1,2}\b/gi, " ").replace(/\b\d{1,2}(?:st|nd|rd|th)\s+(?:season|cour|part)\b/gi, " ").replace(/第\s*(?:[0-9]{1,2}|[一二三四五六七八九十])\s*[期幕部]/g, " ").replace(/\s(?:II|III|IV|V|VI)$/, " ").replace(/\s+/g, " ").trim();
+}
+function releaseSeason(name) {
+  const patterns = [
+    /\bS(\d{1,2})\s*E\d{1,4}\b/i,
+    /\bS(\d{1,2})\b(?=\s*[-–]\s*\d)/i,
+    /\bSeason\s*(\d{1,2})\b/i,
+    /\b(\d{1,2})(?:st|nd|rd|th)\s+Season\b/i,
+    /\bPart\s*(\d{1,2})\b/i
+  ];
+  for (const re of patterns) {
+    const m = name.match(re);
+    if (m) return parseInt(m[1], 10);
+  }
+  return null;
+}
+function seasonMismatch(name, wanted) {
+  const s = releaseSeason(name);
+  return s !== null && s !== (wanted ?? 1);
+}
 
 // src/providers/torrent/nyaa.ts
 var UA30 = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36";
@@ -39519,12 +39560,14 @@ var provider23 = {
   name: "nyaa",
   sites: BASES7,
   async batch(opts) {
-    const titles = searchTitles(opts.titles ?? []);
+    const season = seasonOf(opts.titles ?? []);
+    const titles = searchTitles((opts.titles ?? []).map(stripSeason));
     const ep = opts.episode ?? 0;
     if (titles.length === 0) return [];
     const epPad3 = ep > 0 ? String(ep).padStart(3, "0") : "";
     const epPad2 = ep > 0 ? String(ep).padStart(2, "0") : "";
-    const plan = titles.flatMap((animeTitle) => (ep > 0 ? [`${animeTitle} - ${epPad2}`, `${animeTitle} ${epPad2}`, `${animeTitle} - ${epPad3}`, animeTitle] : [animeTitle]).map((query) => ({ animeTitle, query })));
+    const ss = season ? String(season).padStart(2, "0") : "";
+    const plan = titles.flatMap((animeTitle) => (ep > 0 ? season && season > 1 ? [`${animeTitle} S${ss}E${epPad2}`, `${animeTitle} S${season} - ${epPad2}`, `${animeTitle} - ${epPad2}`, animeTitle] : [`${animeTitle} - ${epPad2}`, `${animeTitle} ${epPad2}`, `${animeTitle} - ${epPad3}`, animeTitle] : [animeTitle]).map((query) => ({ animeTitle, query })));
     const seen = /* @__PURE__ */ new Set();
     const results = [];
     for (const { animeTitle, query } of plan) {
@@ -39546,6 +39589,8 @@ var provider23 = {
         const fileSize = item.match(/<nyaa:size>(.*?)<\/nyaa:size>/)?.[1] ?? "";
         const matchScore = scoreTorrentResult(torrentTitle, animeTitle, ep, seeders);
         if (ep > 0 && matchScore === 0) continue;
+        if (ep > 0 && seasonMismatch(torrentTitle, season)) continue;
+        if (ep > 0 && season && season > 1 && releaseSeason(torrentTitle) === null) continue;
         seen.add(torrentTitle);
         const url = magnetLink || torrentUrl;
         if (!url) continue;
@@ -39704,6 +39749,9 @@ async function searchOne(opts, title2) {
       const show = data2[key];
       if (!show?.downloads || !Array.isArray(show.downloads)) continue;
       if (isBatch(key)) continue;
+      const wanted = seasonOf(opts.titles ?? []);
+      if (seasonMismatch(key, wanted)) continue;
+      if (wanted && wanted > 1 && releaseSeason(key) === null) continue;
       const normalizedKeyTitle = normalizeTitle6(key.split("-")[0] || "");
       const titleMatch = normalizedKeyTitle.includes(normalizedSearchTitle) || normalizedSearchTitle.includes(normalizedKeyTitle);
       if (!titleMatch) continue;

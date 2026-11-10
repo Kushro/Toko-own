@@ -8,7 +8,7 @@ import { normalizeQuality } from '../../utils/scraping/quality.js';
 import type { TorrentProvider, SourceOptions, SourceResult } from '../../types/index.js';
 import { fetchResponse } from '../../utils/http/fetch.js';
 import { scoreEpisodeMatch, isBatchTitle } from '../../utils/torrent/matcher.js';
-import { firstWithResults } from '../../utils/torrent/search-titles.js';
+import { firstWithResults, seasonOf, seasonMismatch, releaseSeason } from '../../utils/torrent/search-titles.js';
 
 interface SubPleaseDownload {
   res: string;
@@ -94,6 +94,11 @@ async function searchOne(opts: SourceOptions, title: string): Promise<SourceResu
       const show = data[key];
       if (!show?.downloads || !Array.isArray(show.downloads)) continue;
       if (isBatch(key)) continue;
+      // A season 2 request must not take the season 1 show (and the other way round): SubsPlease names later
+      // seasons "Title S2", so an unmarked show is season 1.
+      const wanted = seasonOf(opts.titles ?? []);
+      if (seasonMismatch(key, wanted)) continue;
+      if (wanted && wanted > 1 && releaseSeason(key) === null) continue;
 
       const normalizedKeyTitle = normalizeTitle(key.split('-')[0] || '');
       const titleMatch = normalizedKeyTitle.includes(normalizedSearchTitle) || normalizedSearchTitle.includes(normalizedKeyTitle);
