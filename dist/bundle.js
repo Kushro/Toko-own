@@ -28852,8 +28852,8 @@ async function extract3(ctx) {
   }
   if (streams.length === 0 && !isAborted(ctx.signal) && !isBudgetExhausted(startTime)) {
     const foundSlugs = [];
-    const searchTitles = ctx.titles.slice(0, MAX_FALLBACK_TITLES).map(stripSeasonSuffix);
-    for (const title2 of searchTitles) {
+    const searchTitles2 = ctx.titles.slice(0, MAX_FALLBACK_TITLES).map(stripSeasonSuffix);
+    for (const title2 of searchTitles2) {
       if (isAborted(ctx.signal) || isBudgetExhausted(startTime)) break;
       for (const slug2 of await searchSlugsScored(title2, ctx)) {
         if (!foundSlugs.includes(slug2)) foundSlugs.push(slug2);
@@ -34303,10 +34303,10 @@ async function extract22(ctx) {
     (value, index2, all) => typeof value === "number" && value > 0 && all.indexOf(value) === index2
   );
   if (ctx.type === "tv" && episodes.length === 0) return [];
-  const searchTitles = ctx.titles.slice(0, MAX_SEARCH_TITLES5);
+  const searchTitles2 = ctx.titles.slice(0, MAX_SEARCH_TITLES5);
   const orderedTitles = [
-    ...searchTitles.filter((t) => !/\bS(?:eason|aison)?\s*\d/i.test(t)),
-    ...searchTitles.filter((t) => /\bS(?:eason|aison)?\s*\d/i.test(t))
+    ...searchTitles2.filter((t) => !/\bS(?:eason|aison)?\s*\d/i.test(t)),
+    ...searchTitles2.filter((t) => /\bS(?:eason|aison)?\s*\d/i.test(t))
   ];
   const matches = [];
   const uniqueSlugs = [];
@@ -39459,6 +39459,30 @@ var MULTIDUB_PROVIDERS = [
   vidup
 ];
 
+// src/utils/torrent/search-titles.ts
+function searchTitles(titles) {
+  const out = [];
+  const add2 = (raw) => {
+    const t = (raw ?? "").replace(/\s+/g, " ").trim();
+    if (t.length < 3 || t.length > 60) return;
+    if (!out.some((o) => o.toLowerCase() === t.toLowerCase())) out.push(t);
+  };
+  for (const t of titles.slice(0, 8)) {
+    add2(t);
+    const head = t.split(/[:：]/)[0];
+    if (head !== t) add2(head);
+  }
+  const latin = (t) => /^[\p{Script=Latin}\p{N}\p{P}\p{S}\s]+$/u.test(t);
+  return [...out.filter(latin), ...out.filter((t) => !latin(t))].slice(0, 3);
+}
+async function firstWithResults(titles, run) {
+  for (const t of searchTitles(titles)) {
+    const r = await run(t);
+    if (r.length > 0) return r;
+  }
+  return [];
+}
+
 // src/providers/torrent/nyaa.ts
 var UA30 = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36";
 var MAGNET_TRACKERS2 = [
@@ -39492,15 +39516,15 @@ var provider23 = {
   name: "nyaa",
   sites: BASES7,
   async batch(opts) {
-    const animeTitle = opts.titles[0] ?? "";
+    const titles = searchTitles(opts.titles ?? []);
     const ep = opts.episode ?? 0;
-    if (!animeTitle) return [];
+    if (titles.length === 0) return [];
     const epPad3 = ep > 0 ? String(ep).padStart(3, "0") : "";
     const epPad2 = ep > 0 ? String(ep).padStart(2, "0") : "";
-    const queries = ep > 0 ? [`${animeTitle} - ${epPad3}`, `${animeTitle} - ${epPad2}`, `${animeTitle} ${epPad3}`, `${animeTitle} ${epPad2}`, animeTitle] : [animeTitle];
+    const plan = titles.flatMap((animeTitle) => (ep > 0 ? [`${animeTitle} - ${epPad2}`, `${animeTitle} ${epPad2}`, `${animeTitle} - ${epPad3}`, animeTitle] : [animeTitle]).map((query) => ({ animeTitle, query })));
     const seen = /* @__PURE__ */ new Set();
     const results = [];
-    for (const query of queries) {
+    for (const { animeTitle, query } of plan) {
       if (results.length >= 50) break;
       const items = await fetchRssItems(query);
       for (const item of items) {
@@ -39648,7 +39672,11 @@ var provider25 = {
   name: "subplease",
   sites: [BASE9],
   async batch(opts) {
-    const title2 = opts.titles[0] ?? "";
+    return firstWithResults(opts.titles ?? [], (title2) => searchOne(opts, title2));
+  }
+};
+async function searchOne(opts, title2) {
+  {
     const ep = opts.episode ?? 0;
     if (!title2) return [];
     const url = `${BASE9}/api/?f=search&tz=UTC&s=${encodeURIComponent(title2)}`;
@@ -39719,7 +39747,7 @@ var provider25 = {
     });
     return results.slice(0, 10);
   }
-};
+}
 var subplease_default = provider25;
 
 // src/providers/torrent/seadex.ts
@@ -39932,7 +39960,11 @@ var provider28 = {
   name: "aniliberty",
   sites: BASES8,
   async batch(opts) {
-    const title2 = opts.titles[0] ?? "";
+    return firstWithResults(opts.titles ?? [], (title2) => searchOne2(opts, title2));
+  }
+};
+async function searchOne2(opts, title2) {
+  {
     const ep = opts.episode ?? 0;
     if (!title2) return [];
     const releases = await searchReleases(title2);
@@ -39981,7 +40013,7 @@ var provider28 = {
     }
     return results;
   }
-};
+}
 var aniliberty_default = provider28;
 
 // src/providers/manga/mangadex.ts

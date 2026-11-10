@@ -10,6 +10,7 @@ import {
   buildMagnet,
   parseEpisodeFromTitle,
 } from '../../utils/torrent/matcher.js';
+import { searchTitles } from '../../utils/torrent/search-titles.js';
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36';
 
@@ -45,21 +46,22 @@ const provider: TorrentProvider = {
   name: 'nyaa',
   sites: BASES,
   async batch(opts: SourceOptions): Promise<SourceResult[]> {
-    const animeTitle = opts.titles[0] ?? '';
+    const titles = searchTitles(opts.titles ?? []);
     const ep = opts.episode ?? 0;
-    if (!animeTitle) return [];
+    if (titles.length === 0) return [];
 
-    // Build queries: episode-specific first, then broad fallback
+    // Per title: episode-specific queries first, then the broad one. Each result is scored against the title that
+    // found it.
     const epPad3 = ep > 0 ? String(ep).padStart(3, '0') : '';
     const epPad2 = ep > 0 ? String(ep).padStart(2, '0') : '';
-    const queries = ep > 0
-      ? [`${animeTitle} - ${epPad3}`, `${animeTitle} - ${epPad2}`, `${animeTitle} ${epPad3}`, `${animeTitle} ${epPad2}`, animeTitle]
-      : [animeTitle];
+    const plan = titles.flatMap(animeTitle => (ep > 0
+      ? [`${animeTitle} - ${epPad2}`, `${animeTitle} ${epPad2}`, `${animeTitle} - ${epPad3}`, animeTitle]
+      : [animeTitle]).map(query => ({ animeTitle, query })));
 
     const seen = new Set<string>();
     const results: SourceResult[] = [];
 
-    for (const query of queries) {
+    for (const { animeTitle, query } of plan) {
       // Up to 50: a weekly episode easily has 25+ releases (groups x 480p/720p/1080p); 20 cut most of them.
       if (results.length >= 50) break;
       const items = await fetchRssItems(query);
