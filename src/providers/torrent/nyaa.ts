@@ -60,7 +60,8 @@ const provider: TorrentProvider = {
     const results: SourceResult[] = [];
 
     for (const query of queries) {
-      if (results.length >= 20) break;
+      // Up to 50: a weekly episode easily has 25+ releases (groups x 480p/720p/1080p); 20 cut most of them.
+      if (results.length >= 50) break;
       const items = await fetchRssItems(query);
 
       for (const item of items) {
@@ -137,7 +138,7 @@ const provider: TorrentProvider = {
       return (b.peers ?? 0) - (a.peers ?? 0);
     });
 
-    return results.slice(0, 20);
+    return results.slice(0, 50);
   },
 };
 
