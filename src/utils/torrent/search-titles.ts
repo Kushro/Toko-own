@@ -11,10 +11,14 @@ export function searchTitles(titles: string[]): string[] {
     if (t.length < 3 || t.length > 60) return;
     if (!out.some(o => o.toLowerCase() === t.toLowerCase())) out.push(t);
   };
+  // "Magical★Explorer" -> "Magical Explorer": release names drop decorative symbols, and nyaa matches words.
+  const plain = (t: string) => t.replace(/[★☆♪♫♥♡◆◇●○■□△▽・×〜~!！?？]/g, ' ');
   for (const t of titles.slice(0, 8)) {
-    add(t);
     const head = t.split(/[:：]/)[0];
-    if (head !== t) add(head);
+    for (const v of [t, head]) {
+      if (plain(v) !== v) add(plain(v));
+      add(v);
+    }
   }
   const latin = (t: string) => /^[\p{Script=Latin}\p{N}\p{P}\p{S}\s]+$/u.test(t);
   return [...out.filter(latin), ...out.filter(t => !latin(t))].slice(0, 3);

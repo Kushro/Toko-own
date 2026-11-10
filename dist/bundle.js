@@ -39467,10 +39467,13 @@ function searchTitles(titles) {
     if (t.length < 3 || t.length > 60) return;
     if (!out.some((o) => o.toLowerCase() === t.toLowerCase())) out.push(t);
   };
+  const plain = (t) => t.replace(/[★☆♪♫♥♡◆◇●○■□△▽・×〜~!！?？]/g, " ");
   for (const t of titles.slice(0, 8)) {
-    add2(t);
     const head = t.split(/[:：]/)[0];
-    if (head !== t) add2(head);
+    for (const v of [t, head]) {
+      if (plain(v) !== v) add2(plain(v));
+      add2(v);
+    }
   }
   const latin = (t) => /^[\p{Script=Latin}\p{N}\p{P}\p{S}\s]+$/u.test(t);
   return [...out.filter(latin), ...out.filter((t) => !latin(t))].slice(0, 3);
