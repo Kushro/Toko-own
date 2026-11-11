@@ -8,6 +8,7 @@ import { normalizeQuality } from '../../utils/scraping/quality.js';
 import type { TorrentProvider, SourceOptions, SourceResult } from '../../types/index.js';
 import { fetchResponse } from '../../utils/http/fetch.js';
 import { scoreEpisodeMatch, isBatchTitle } from '../../utils/torrent/matcher.js';
+import { episodeNotAired, getShowFacts } from '../../utils/torrent/show-facts.js';
 import { firstWithResults, seasonOf, seasonMismatch, releaseSeason } from '../../utils/torrent/search-titles.js';
 
 interface SubPleaseDownload {
@@ -17,6 +18,8 @@ interface SubPleaseDownload {
 
 interface SubPleaseShow {
   show: string;
+  /** RFC 2822, e.g. "Fri, 29 May 2026 17:05:35 +0000". */
+  release_date?: string;
   episode: string;
   downloads: SubPleaseDownload[];
 }
@@ -113,6 +116,16 @@ async function searchOne(opts: SourceOptions, title: string): Promise<SourceResu
       const detectedEp = epFromField ?? epFromKey;
       return detectedEp === ep || scoreEpisodeMatch(key, ep) > 0;
     });
+
+    // An episode AniList says has not aired: only a release of exactly it from the last week is believed (groups beat
+    // the schedule). The latest-episodes fallback would otherwise fill the list with earlier episodes.
+    if (ep > 0 && episodeNotAired(await getShowFacts(opts.anilistId), ep)) {
+      if (shouldFallbackToLatest) return [];
+      for (let i = titleMatches.length - 1; i >= 0; i--) {
+        const at = Date.parse(titleMatches[i].show.release_date ?? '');
+        if (!(Number.isFinite(at) && Date.now() - at <= 7 * 24 * 60 * 60 * 1000)) titleMatches.splice(i, 1);
+      }
+    }
 
     for (const { key, show } of titleMatches) {
       if (ep > 0 && !shouldFallbackToLatest) {

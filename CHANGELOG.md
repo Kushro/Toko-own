@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased (Kushro/Toko-own)
+
+Torrent matching, with ideas taken from anitorrent (reimplemented, no code copied).
+
+- AnimeTosho looks up by AniDB id from ani.zip: `?eid=` for the episode, then `?aid=` for the show, and only then
+  the text search. An id lookup is the right show by construction.
+- Cour-split shows: the AniList prequel chain gives the numbers groups use across an arc ("BLEACH TYBW - The
+  Calamity" episode 9 also finds "- 49", "The Apothecary Diaries" S3E6 also finds "- 54"). When several numbers
+  match, the one with the freshest upload wins.
+- An episode AniList says has not aired returns nothing on Nyaa, AnimeTosho and SubsPlease, unless an exact match
+  was uploaded in the last week (groups beat the broadcast schedule). Before, it returned an earlier cour's file or,
+  on SubsPlease, the latest episodes.
+- Packs are no longer thrown away for an episode request: a pack whose range covers the episode ranks after exact
+  matches, and unlabelled releases only show when nothing exact exists. A release naming another episode is out.
+- One-word shows ("Another", "Monster") no longer take releases that add words ("In Another World With My
+  Smartphone"), and an arc entry no longer takes a sibling arc ("Soukoku-tan" against "Kashin-tan"). How many show
+  words a release must carry comes from the show's main title, not the short search query ("Bleach").
+
 ## 4.5.9 - 2026-11-10 (Kushro/Toko-own)
 
 Fork build for Tatakai Next's native host (on top of upstream 4.5.8).

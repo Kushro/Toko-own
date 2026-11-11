@@ -5,7 +5,8 @@
 import { normalizeQuality } from '../../utils/scraping/quality.js';
 import type { TorrentProvider, SourceOptions, SourceResult } from '../../types/index.js';
 import { fetchResponse } from '../../utils/http/fetch.js';
-import { scoreEpisodeMatch, isBatchTitle } from '../../utils/torrent/matcher.js';
+import { buildTierContext, capByTier, selectByTier, type TierInput } from '../../utils/torrent/tiers.js';
+import { getAnidbIds } from '../../utils/mapping/anizip.js';
 import { buildSearchQueries } from '../../utils/scraping/title-normalizer.js';
 
 interface AnimeToshoItem {
@@ -16,6 +17,9 @@ interface AnimeToshoItem {
   leechers?: number;
   total_size?: number;
   num_files?: number;
+  info_hash?: string;
+  /** Upload time, Unix seconds. */
+  timestamp?: number;
 }
 
 function formatSize(bytes?: number): string {
@@ -25,12 +29,16 @@ function formatSize(bytes?: number): string {
   return `${(bytes / 1e3).toFixed(0)} KB`;
 }
 
-function matchesEpisode(title: string, ep: number): boolean {
-  if (!ep || ep <= 0) return true;
-  return scoreEpisodeMatch(title, ep) > 0;
-}
-
 const BASE = 'https://feed.animetosho.org';
+
+async function fetchItems(params: string): Promise<AnimeToshoItem[]> {
+  try {
+    const res = await fetchResponse(`${BASE}/json?${params}`, { timeoutMs: 6000 });
+    if (!res.ok) return [];
+    const json = await res.json() as AnimeToshoItem[];
+    return Array.isArray(json) ? json : [];
+  } catch { return []; }
+}
 
 const provider: TorrentProvider = {
   name: 'animetosho',
@@ -38,55 +46,54 @@ const provider: TorrentProvider = {
   async batch(opts: SourceOptions): Promise<SourceResult[]> {
     const titles = opts.titles ?? [];
     const ep = opts.episode ?? 0;
-    if (titles.length === 0) return [];
+    if (titles.length === 0 && !opts.anilistId) return [];
 
-    const epStr = ep > 0 ? ` ${String(ep).padStart(2, '0')}` : '';
+    const [ctx, ids] = await Promise.all([
+      buildTierContext({ anilistId: opts.anilistId, titles, episode: ep }),
+      opts.anilistId ? getAnidbIds(opts.anilistId, ep > 0 ? ep : undefined) : Promise.resolve({ aid: null, eid: null }),
+    ]);
 
-    async function fetchItems(qStr: string): Promise<AnimeToshoItem[]> {
-      const url = `${BASE}/json?q=${encodeURIComponent(qStr)}`;
-      try {
-        const res = await fetchResponse(url, {
-          timeoutMs: 6000,
-        });
-        if (!res.ok) return [];
-        const json = await res.json() as AnimeToshoItem[];
-        return Array.isArray(json) ? json : [];
-      } catch { return []; }
-    }
-
-    let items: AnimeToshoItem[] = [];
-    for (const title of buildSearchQueries(titles)) {
-      if (ep > 0) {
-        items = await fetchItems(`${title}${epStr}`.trim());
+    // AnimeTosho maps every release to AniDB, so an id lookup is this show (and with `eid`, this episode) by
+    // construction, with none of the title guessing a text search needs. Text search stays as the fallback for
+    // shows ani.zip has no AniDB id for, and for releases AnimeTosho has not mapped yet.
+    const inputs: TierInput<AnimeToshoItem>[] = [];
+    const seen = new Set<string>();
+    const absorb = (items: AnimeToshoItem[], how: { exactEpisode?: boolean; knownShow?: boolean; matchTitle?: string }) => {
+      for (const item of items) {
+        const link = item.magnet_uri ?? item.torrent_url ?? '';
+        const title = item.title ?? '';
+        if (!link || !title) continue;
+        const key = (item.info_hash ?? link).toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        inputs.push({ item, title, publishedAt: (item.timestamp ?? 0) * 1000, ...how });
       }
-      if (items.length === 0) {
-        items = await fetchItems(title);
-      }
-      if (items.length > 0) break;
-    }
+    };
+    const hasExact = () => selectByTier(inputs, ctx).some(o => o.tier === 'A');
 
-    if (!Array.isArray(items) || items.length === 0) return [];
+    if (ep > 0 && ids.eid) absorb(await fetchItems(`eid=${ids.eid}`), { exactEpisode: true, knownShow: true });
+    if (ids.aid && !hasExact()) absorb(await fetchItems(`aid=${ids.aid}`), { knownShow: true });
+
+    if (!hasExact()) {
+      const epStr = ep > 0 ? ` ${String(ep).padStart(2, '0')}` : '';
+      for (const title of buildSearchQueries(titles)) {
+        let items: AnimeToshoItem[] = [];
+        if (ep > 0) items = await fetchItems(`q=${encodeURIComponent(`${title}${epStr}`.trim())}`);
+        if (items.length === 0) items = await fetchItems(`q=${encodeURIComponent(title)}`);
+        absorb(items, { matchTitle: title });
+        if (items.length > 0) break;
+      }
+    }
 
     const results: SourceResult[] = [];
-    const seenLinks = new Set<string>();
-
-    for (const item of items) {
-      const link = item.magnet_uri ?? item.torrent_url ?? '';
-      if (!link || seenLinks.has(link)) continue;
-
+    for (const { item, tier } of selectByTier(inputs, ctx)) {
       const torrentTitle = item.title ?? '';
-      if (ep > 0) {
-        if (isBatchTitle(torrentTitle)) continue;
-        if (!matchesEpisode(torrentTitle, ep)) continue;
-      }
-      seenLinks.add(link);
-
       const seeders = item.seeders ?? 0;
       const leechers = item.leechers ?? 0;
-
+      const epScore = tier === 'A' ? 100 : tier === 'B' ? 80 : 30;
       results.push({
         source: 'animetosho',
-        url: link,
+        url: item.magnet_uri ?? item.torrent_url ?? '',
         quality: normalizeQuality(torrentTitle),
         headers: {},
         subtitles: [],
@@ -97,10 +104,11 @@ const provider: TorrentProvider = {
         leechers,
         peers: seeders + leechers,
         fileSize: formatSize(item.total_size),
+        matchScore: capByTier(Math.round(40 + epScore * 0.5 + Math.min(10, seeders / 10)), tier),
       });
     }
 
-    return results.slice(0, 15);
+    return results.slice(0, 30);
   },
 };
 
