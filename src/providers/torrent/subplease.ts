@@ -8,8 +8,8 @@ import { normalizeQuality } from '../../utils/scraping/quality.js';
 import type { TorrentProvider, SourceOptions, SourceResult } from '../../types/index.js';
 import { fetchResponse } from '../../utils/http/fetch.js';
 import { scoreEpisodeMatch, isBatchTitle } from '../../utils/torrent/matcher.js';
-import { episodeNotAired, getShowFacts } from '../../utils/torrent/show-facts.js';
-import { firstWithResults, seasonOf, seasonMismatch, releaseSeason } from '../../utils/torrent/search-titles.js';
+import { buildTierContext } from '../../utils/torrent/tiers.js';
+import { firstWithResults, seasonOf, seasonMismatch, releaseSeason, stripSeason } from '../../utils/torrent/search-titles.js';
 
 interface SubPleaseDownload {
   res: string;
@@ -60,48 +60,46 @@ const provider: TorrentProvider = {
   sites: [BASE],
   async batch(opts: SourceOptions): Promise<SourceResult[]> {
     // Each short title in turn (the first one may be a long romaji that finds nothing).
-    return firstWithResults(opts.titles ?? [], title => searchOne(opts, title));
+    return firstWithResults((opts.titles ?? []).map(stripSeason), title => searchOne(opts, title));
   },
 };
+
+/** A SubsPlease API response, or null when it is empty, not JSON or has no releases. */
+async function fetchFeed(url: string): Promise<SubPleaseResponse | null> {
+  try {
+    const res = await fetchResponse(url, { signal: AbortSignal.timeout(10000) } as RequestInit);
+    if (!res.ok) return null;
+    const text = (await res.text()).trim();
+    if (!text.startsWith('{')) return null;
+    const data = JSON.parse(text) as SubPleaseResponse;
+    return data && typeof data === 'object' && !Array.isArray(data) && Object.keys(data).length > 0 ? data : null;
+  } catch {
+    return null;
+  }
+}
 
 async function searchOne(opts: SourceOptions, title: string): Promise<SourceResult[]> {
   {
     const ep = opts.episode ?? 0;
     if (!title) return [];
 
-    const url = `${BASE}/api/?f=search&tz=UTC&s=${encodeURIComponent(title)}`;
-
-    let res: Response;
-    try {
-      res = await fetchResponse(url, { signal: AbortSignal.timeout(10000) } as RequestInit);
-    } catch {
-      return [];
-    }
-
-    if (!res.ok) return [];
-
-    let data: SubPleaseResponse;
-    try {
-      data = await res.json() as SubPleaseResponse;
-    } catch {
-      return [];
-    }
-
-    if (!data || typeof data !== 'object') return [];
+    // The search endpoint has answered HTTP 200 with an empty body for every term before; the latest feed kept
+    // working, so it stands in (filtered by title below) and the currently airing shows are still found.
+    const data = await fetchFeed(`${BASE}/api/?f=search&tz=UTC&s=${encodeURIComponent(title)}`)
+      ?? await fetchFeed(`${BASE}/api/?f=latest&tz=UTC`);
+    if (!data) return [];
 
     const results: SourceResult[] = [];
     const normalizedSearchTitle = normalizeTitle(title);
     const titleMatches: Array<{ key: string; show: SubPleaseShow }> = [];
 
+    const wanted = seasonOf(opts.titles ?? []);
     for (const key of Object.keys(data)) {
       const show = data[key];
       if (!show?.downloads || !Array.isArray(show.downloads)) continue;
       if (isBatch(key)) continue;
-      // A season 2 request must not take the season 1 show (and the other way round): SubsPlease names later
-      // seasons "Title S2", so an unmarked show is season 1.
-      const wanted = seasonOf(opts.titles ?? []);
+      // A season 2 request must not take a show named for another season ("Title S3").
       if (seasonMismatch(key, wanted)) continue;
-      if (wanted && wanted > 1 && releaseSeason(key) === null) continue;
 
       const normalizedKeyTitle = normalizeTitle(key.split('-')[0] || '');
       const titleMatch = normalizedKeyTitle.includes(normalizedSearchTitle) || normalizedSearchTitle.includes(normalizedKeyTitle);
@@ -110,17 +108,14 @@ async function searchOne(opts: SourceOptions, title: string): Promise<SourceResu
       titleMatches.push({ key, show });
     }
 
-    const shouldFallbackToLatest = ep > 0 && titleMatches.length > 0 && !titleMatches.some(({ key }) => {
-      const epFromField = data[key]?.episode ? parseInt(data[key].episode, 10) : null;
-      const epFromKey = parseEpisodeNumber(key);
-      const detectedEp = epFromField ?? epFromKey;
-      return detectedEp === ep || scoreEpisodeMatch(key, ep) > 0;
-    });
+    // Episode numbers SubsPlease may use: the AniList one, or one counted across the arc for a cour-split show
+    // ("Kusuriya no Hitorigoto - 54" is season 3 episode 6).
+    const ctx = ep > 0 ? await buildTierContext({ anilistId: opts.anilistId, titles: opts.titles ?? [], episode: ep }) : null;
+    const candidates = ctx?.candidates ?? [];
 
-    // An episode AniList says has not aired: only a release of exactly it from the last week is believed (groups beat
-    // the schedule). The latest-episodes fallback would otherwise fill the list with earlier episodes.
-    if (ep > 0 && episodeNotAired(await getShowFacts(opts.anilistId), ep)) {
-      if (shouldFallbackToLatest) return [];
+    // An episode AniList says has not aired: only a release of it from the last week is believed (groups beat the
+    // schedule).
+    if (ctx?.notAired) {
       for (let i = titleMatches.length - 1; i >= 0; i--) {
         const at = Date.parse(titleMatches[i].show.release_date ?? '');
         if (!(Number.isFinite(at) && Date.now() - at <= 7 * 24 * 60 * 60 * 1000)) titleMatches.splice(i, 1);
@@ -128,13 +123,15 @@ async function searchOne(opts: SourceOptions, title: string): Promise<SourceResu
     }
 
     for (const { key, show } of titleMatches) {
-      if (ep > 0 && !shouldFallbackToLatest) {
+      if (ep > 0) {
         const epFromField = show.episode ? parseInt(show.episode, 10) : null;
-        const epFromKey = parseEpisodeNumber(key);
-        const detectedEp = epFromField ?? epFromKey;
+        const detectedEp = epFromField ?? parseEpisodeNumber(key);
 
         if (detectedEp !== null) {
-          if (detectedEp !== ep) continue;
+          if (!candidates.includes(detectedEp)) continue;
+          // SubsPlease names a later season "Title S2", so an unmarked show under the AniList number is season 1.
+          // A number counted across the arc names no season and is still this one.
+          if (wanted && wanted > 1 && detectedEp === ep && releaseSeason(key) === null) continue;
         } else if (scoreEpisodeMatch(key, ep) === 0) {
           continue;
         }

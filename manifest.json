@@ -2,7 +2,7 @@
   "id": "tatakai.extension.toko",
   "name": "Toko",
   "type": "custom",
-  "version": "4.5.9",
+  "version": "4.6.0",
   "browserDomains": [
     "webnovel.com",
     "novelfull.com",

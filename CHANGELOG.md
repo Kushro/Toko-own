@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (Kushro/Toko-own)
+## 4.6.0 - 2026-11-11 (Kushro/Toko-own)
 
 Torrent matching, with ideas taken from anitorrent (reimplemented, no code copied).
 
@@ -17,6 +17,20 @@ Torrent matching, with ideas taken from anitorrent (reimplemented, no code copie
 - One-word shows ("Another", "Monster") no longer take releases that add words ("In Another World With My
   Smartphone"), and an arc entry no longer takes a sibling arc ("Soukoku-tan" against "Kashin-tan"). How many show
   words a release must carry comes from the show's main title, not the short search query ("Bleach").
+- Years: a trailing "(2026)" is no longer searched (nyaa needs every word, so it hid uploads without it) and is used
+  as a filter instead. A movie or one-episode work uses its AniList start year ±1 and drops releases naming a season,
+  a range or a later episode, so the 2020 "False Memory" short no longer lists the 2026 series.
+- A number in the show's name is not an episode range ("Kaiju No. 8 - 10" is episode 10).
+- Nyaa honours `exclusions`, puts the requested resolution first, then trusted uploads, then remakes last.
+- Nyaa searches every title once and adds episode-numbered queries only when that did not reach the episode
+  (an airing episode takes one query per title; before, up to four per title). A 429 stops the search, and a ddos-guard challenge or rate limit with no
+  results is reported as an error instead of an empty list. Release names are entity-decoded (`&#39;` → `'`).
+- Search titles drop generic one-word candidates to the back ("Monster #8"), and a few shows get the names their
+  releases use (Detective Conan, Re:Zero, Bleach TYBW).
+- SubsPlease falls back to its latest feed when search answers empty, matches cour-counted numbers
+  ("Kusuriya no Hitorigoto - 54" for season 3 episode 6) and searches without the season suffix. It no longer
+  returns other episodes of the show when the requested one is missing.
+- AnimeTosho honours `exclusions` and the requested resolution.
 
 ## 4.5.9 - 2026-11-10 (Kushro/Toko-own)
 

@@ -1,3 +1,5 @@
+import { significantTokens } from './tokens.js';
+
 /**
  * Titles worth searching torrent indexers with, best first. The host's title order varies: the display title may be a
  * 90-character romaji ("Magical★Explorer: Eroge no Yuujin Chara ni Tensei Shitakedo, …") that matches nothing, so take
@@ -13,7 +15,8 @@ export function searchTitles(titles: string[]): string[] {
   };
   // "Magical★Explorer" -> "Magical Explorer": release names drop decorative symbols, and nyaa matches words.
   const plain = (t: string) => t.replace(/[★☆♪♫♥♡◆◇●○■□△▽・×〜~!！?？]/g, ' ');
-  for (const t of titles.slice(0, 8)) {
+  for (const raw of titles.slice(0, 8)) {
+    const t = stripTrailingYear(raw);
     const head = t.split(/[:：]/)[0];
     for (const v of [t, head]) {
       if (plain(v) !== v) add(plain(v));
@@ -21,7 +24,42 @@ export function searchTitles(titles: string[]): string[] {
     }
   }
   const latin = (t: string) => /^[\p{Script=Latin}\p{N}\p{P}\p{S}\s]+$/u.test(t);
-  return [...out.filter(latin), ...out.filter(t => !latin(t))].slice(0, 3);
+  // A title that boils down to one generic word ("Monster #8" -> "monster", "Ore dake Level Up na Ken" -> "level")
+  // drags in every show containing it; it goes last, and is still used when it is all there is.
+  const ordered = [...out.filter(latin), ...out.filter(t => !latin(t))];
+  return [...ordered.filter(t => !isDegenerate(t)), ...ordered.filter(isDegenerate)].slice(0, 3);
+}
+
+const GENERIC_QUERY_WORDS = new Set([
+  'monster', 'level', 'hero', 'world', 'girl', 'boy', 'demon', 'devil', 'dragon', 'angel', 'king', 'queen', 'story',
+  'magic', 'school', 'love', 'life', 'club', 'sword', 'blood', 'dark', 'light', 'night', 'master', 'star', 'moon',
+  'witch', 'ghost', 'dead', 'zombie', 'idol', 'another',
+]);
+
+function isDegenerate(title: string): boolean {
+  const toks = significantTokens(title);
+  return toks.length <= 1 && ((toks[0] ?? '').length < 4 || GENERIC_QUERY_WORDS.has(toks[0] ?? ''));
+}
+
+/** "False Memory (2026)" -> "False Memory": nyaa requires every word, so the year hid every upload without it. */
+export function stripTrailingYear(title: string): string {
+  return title.replace(/\s*[(\[]\s*(?:19|20)\d{2}\s*[)\]]\s*$/, '').trim() || title;
+}
+
+// Shows whose releases use a name AniList does not list among its titles.
+const TITLE_ALIASES: Record<number, string[]> = {
+  21: ['One Piece'],
+  235: ['Detective Conan', 'Meitantei Conan'],
+  108632: ['Re Zero kara Hajimeru', 'ReZero Starting Life'],
+  116674: ['Bleach Sennen Kessen-hen', 'Bleach Thousand-Year Blood War'],
+  159322: ['Bleach Sennen Kessen-hen', 'Bleach Thousand-Year Blood War'],
+  169755: ['Bleach Sennen Kessen-hen', 'Bleach Thousand-Year Blood War'],
+  185874: ['Bleach Sennen Kessen-hen', 'Bleach Thousand-Year Blood War'],
+};
+
+/** Extra search names for an AniList id, tried only after the regular titles found nothing exact. */
+export function aliasTitles(anilistId: number | undefined): string[] {
+  return anilistId ? [...(TITLE_ALIASES[anilistId] ?? [])] : [];
 }
 
 /** Run a single-title search with each of [`searchTitles`] until one returns something. */

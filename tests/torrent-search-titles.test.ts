@@ -28,3 +28,9 @@ test('season of release names and the mismatch rule', () => {
   expect(seasonMismatch('[X] Show S01E10', null)).toBe(false);
   expect(seasonMismatch('[X] Show - 10', null)).toBe(false);
 });
+
+test('search titles: no trailing year, generic one-word titles last', () => {
+  expect(searchTitles(['False Memory (2026)'])).toEqual(['False Memory']);
+  expect(searchTitles(['Monster #8', 'Kaijuu 8-gou'])[0]).toBe('Kaijuu 8-gou');
+  expect(searchTitles(['Another'])).toEqual(['Another']);
+});

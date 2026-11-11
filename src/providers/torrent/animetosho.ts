@@ -7,6 +7,7 @@ import type { TorrentProvider, SourceOptions, SourceResult } from '../../types/i
 import { fetchResponse } from '../../utils/http/fetch.js';
 import { buildTierContext, capByTier, selectByTier, type TierInput } from '../../utils/torrent/tiers.js';
 import { getAnidbIds } from '../../utils/mapping/anizip.js';
+import { hitsExclusion, matchesResolution } from '../../utils/torrent/preferences.js';
 import { buildSearchQueries } from '../../utils/scraping/title-normalizer.js';
 
 interface AnimeToshoItem {
@@ -62,7 +63,7 @@ const provider: TorrentProvider = {
       for (const item of items) {
         const link = item.magnet_uri ?? item.torrent_url ?? '';
         const title = item.title ?? '';
-        if (!link || !title) continue;
+        if (!link || !title || hitsExclusion(title, opts.exclusions)) continue;
         const key = (item.info_hash ?? link).toLowerCase();
         if (seen.has(key)) continue;
         seen.add(key);
@@ -85,8 +86,13 @@ const provider: TorrentProvider = {
       }
     }
 
+    // Tier first (selectByTier's order), then the requested resolution.
+    const picked = selectByTier(inputs, ctx)
+      .map((o, i) => ({ o, i, res: matchesResolution(o.item.title ?? '', opts.resolution) ? 0 : 1 }))
+      .sort((a, b) => (a.o.tier === b.o.tier ? a.res - b.res || a.i - b.i : a.i - b.i))
+      .map(x => x.o);
     const results: SourceResult[] = [];
-    for (const { item, tier } of selectByTier(inputs, ctx)) {
+    for (const { item, tier } of picked) {
       const torrentTitle = item.title ?? '';
       const seeders = item.seeders ?? 0;
       const leechers = item.leechers ?? 0;
