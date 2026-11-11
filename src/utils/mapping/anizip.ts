@@ -48,6 +48,8 @@ export interface AniZipEpisode {
   seasonNumber?: number;
   episodeNumber?: number;
   absoluteEpisodeNumber?: number;
+  /** AniDB episode id (AnimeTosho `?eid=`). */
+  anidbEid?: number;
   tvdbShowId?: number;
   tvdbId?: number;
   title?: Record<string, string>;
@@ -353,4 +355,18 @@ export async function getEpisodeCount(anilistId: number): Promise<number | null>
   const response = await fetchAniZipMapping(anilistId);
   const count = response?.episodeCount;
   return typeof count === 'number' && count > 0 ? count : null;
+}
+
+/** AniDB anime id and, for `episode`, the AniDB episode id (AnimeTosho's `?aid=` / `?eid=`). Never throws. */
+export async function getAnidbIds(
+  anilistId: number,
+  episode?: number
+): Promise<{ aid: number | null; eid: number | null }> {
+  const response = await fetchAniZipMapping(anilistId).catch(() => null);
+  const aid = Number(response?.mappings?.anidb_id);
+  const eid = episode ? Number(response?.episodes?.[String(episode)]?.anidbEid) : NaN;
+  return {
+    aid: Number.isInteger(aid) && aid > 0 ? aid : null,
+    eid: Number.isInteger(eid) && eid > 0 ? eid : null,
+  };
 }
