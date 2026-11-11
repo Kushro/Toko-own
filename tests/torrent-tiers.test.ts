@@ -4,12 +4,15 @@ import {
   nameIntroducesForeignWord,
   primaryTokenCount,
   arcTokens,
+  buildTierContext,
+  detectYears,
   selectByTier,
   showNamePart,
   titleEpisodeMarkers,
   type TierContext,
 } from '../src/utils/torrent/tiers';
 import { significantTokens } from '../src/utils/torrent/tokens';
+import { hitsExclusion, matchesResolution } from '../src/utils/torrent/preferences';
 import { episodeCandidates, episodeNotAired, type ShowFacts } from '../src/utils/torrent/show-facts';
 
 const tokens = (...titles: string[]) => new Set(titles.flatMap(significantTokens));
@@ -20,6 +23,9 @@ const ctxFor = (titles: string[], episode: number, extra: Partial<TierContext> =
   showTokens: tokens(...titles),
   primaryCount: primaryTokenCount(titles),
   arcTokens: arcTokens(titles),
+  showYears: new Set(titles.flatMap(t => [...detectYears(t)])),
+  singleEpisode: false,
+  titleNumbers: new Set(),
   ...extra,
 });
 
@@ -130,4 +136,37 @@ test('a sibling arc is not this entry', () => {
   // Frieren's English subtitle is not an arc: the romaji release names none of it and adds nothing.
   const frieren = ctxFor(['Sousou no Frieren', "Frieren: Beyond Journey's End"], 8);
   expect(classifyRelease('[SubsPlease] Sousou no Frieren - 08 (1080p)', frieren)?.tier).toBe('A');
+});
+
+const facts = (over: Partial<ShowFacts>): ShowFacts => ({ nextAiring: null, startYear: null, format: 'TV', episodes: 12, prequels: [], ...over });
+
+test('a year in the title is a filter, not a requirement of the name', async () => {
+  const ctx = await buildTierContext({ titles: ['False Memory (2026)'], episode: 1 }, facts({ startYear: 2026, episodes: 7 }));
+  expect(classifyRelease('[ToonsHub] False Memory S01E01 (1080p)', ctx)?.tier).toBe('A');
+  expect(classifyRelease('[Group] False Memory (2020) - 01 [1080p]', ctx)?.tier).toBe('C');
+});
+
+test('a one-episode work rejects series releases and other years', async () => {
+  const ctx = await buildTierContext({ titles: ['False Memory'], episode: 1 }, facts({ startYear: 2020, episodes: 1, format: 'ONA' }));
+  expect(classifyRelease('[Group] False Memory (2020) [1080p]', ctx)?.tier).toBe('A');
+  expect(classifyRelease('[Group] False Memory - 05 [1080p]', ctx)).toBeNull();
+  expect(classifyRelease('[Group] False Memory S01 [1080p]', ctx)).toBeNull();
+  expect(classifyRelease('[Group] False Memory (2026) [1080p]', ctx)?.tier).toBe('C');
+  expect(classifyRelease('[Group] False Memory - 01 [1080p]', ctx)?.tier).toBe('B');
+  const movie = await buildTierContext({ titles: ['Detective Conan Movie 27: The Million-dollar Pentagram'] }, facts({ format: 'MOVIE', startYear: 2024, episodes: 1 }));
+  expect(classifyRelease('[Group] Detective Conan Movie 27 The Million-dollar Pentagram [BD 1080p]', movie)?.tier).toBe('A');
+});
+
+test('a number in the show name is not a pack range', async () => {
+  const ctx = await buildTierContext({ titles: ['Kaiju No. 8'], episode: 9 }, facts({}));
+  expect(classifyRelease('[Group] Kaiju No. 8 - 10 [1080p]', ctx)).toBeNull();
+  expect(classifyRelease('[Group] Kaiju No. 8 - 09 [1080p]', ctx)?.tier).toBe('A');
+});
+
+test('preferences: exclusions and resolution', () => {
+  expect(hitsExclusion('[Group] Show - 01 [720p][HEVC]', ['hevc'])).toBe(true);
+  expect(hitsExclusion('[Group] Show - 01 [720p]', ['hevc', ''])).toBe(false);
+  expect(matchesResolution('[Group] Show - 01 (1080p)', '1080p')).toBe(true);
+  expect(matchesResolution('[Group] Show - 01 (720p)', '1080')).toBe(false);
+  expect(matchesResolution('[Group] Show - 01 (720p)', '')).toBe(true);
 });

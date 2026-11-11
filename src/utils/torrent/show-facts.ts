@@ -27,6 +27,8 @@ export interface ShowFacts {
   nextAiring: number | null;
   startYear: number | null;
   format: string | null;
+  /** Episode count of this entry, or null when AniList does not know it yet. */
+  episodes: number | null;
   /** Nearest prequel first. */
   prequels: PrequelEntry[];
 }
@@ -98,13 +100,14 @@ function entryOf(node: RelationNode): PrequelEntry {
 async function fetchFacts(anilistId: number): Promise<ShowFacts | undefined> {
   const root = await anilist(CHAIN_QUERY, anilistId);
   if (root === undefined) return undefined;
-  if (root === null) return { nextAiring: null, startYear: null, format: null, prequels: [] };
+  if (root === null) return { nextAiring: null, startYear: null, format: null, episodes: null, prequels: [] };
 
   const next = Number(root.nextAiringEpisode?.episode);
   const facts: ShowFacts = {
     nextAiring: Number.isInteger(next) && next > 0 ? next : null,
     startYear: Number.isInteger(root.startDate?.year) ? root.startDate!.year! : null,
     format: root.format ?? null,
+    episodes: Number.isInteger(root.episodes) && root.episodes! > 0 ? root.episodes! : null,
     prequels: [],
   };
 

@@ -7409,7 +7409,7 @@ var Sequences = {
   // `</xmp`
 };
 var Tokenizer = class {
-  constructor({ xmlMode = false, decodeEntities: decodeEntities2 = true }, cbs) {
+  constructor({ xmlMode = false, decodeEntities: decodeEntities3 = true }, cbs) {
     this.cbs = cbs;
     this.state = State.Text;
     this.buffer = "";
@@ -7423,7 +7423,7 @@ var Tokenizer = class {
     this.currentSequence = void 0;
     this.sequenceIndex = 0;
     this.xmlMode = xmlMode;
-    this.decodeEntities = decodeEntities2;
+    this.decodeEntities = decodeEntities3;
     this.entityDecoder = new EntityDecoder2(xmlMode ? xmlDecodeTree : htmlDecodeTree, (cp, consumed) => this.emitCodePoint(cp, consumed));
   }
   reset() {
@@ -27947,6 +27947,15 @@ async function resolveTmdbTarget(options) {
     mapped: mapped && Boolean(tmdbId)
   };
 }
+async function getAnidbIds(anilistId, episode) {
+  const response = await fetchAniZipMapping(anilistId).catch(() => null);
+  const aid = Number(response?.mappings?.anidb_id);
+  const eid = episode ? Number(response?.episodes?.[String(episode)]?.anidbEid) : NaN;
+  return {
+    aid: Number.isInteger(aid) && aid > 0 ? aid : null,
+    eid: Number.isInteger(eid) && eid > 0 ? eid : null
+  };
+}
 
 // src/utils/http/safe-url.ts
 var siteDomain = (base) => new URL(base).hostname.toLowerCase().replace(/^www\./, "");
@@ -29500,15 +29509,15 @@ async function searchAnime6(title2, signal) {
   }
   return results.sort((a, b) => b.score - a.score);
 }
-async function fetchFullStory(newsId, cache3, signal) {
-  const hit = cache3.get(newsId);
+async function fetchFullStory(newsId, cache4, signal) {
+  const hit = cache4.get(newsId);
   if (hit !== void 0) return hit;
   const data2 = await siteFetchJson(
     `${SITE5}/engine/ajax/full-story.php?newsId=${newsId}`,
     { acceptLanguage: FR_ACCEPT_LANGUAGE, timeoutMs: 1e4, signal }
   );
   const html3 = data2?.html || null;
-  cache3.set(newsId, html3);
+  cache4.set(newsId, html3);
   return html3;
 }
 function parseEpItems(html3) {
@@ -33800,13 +33809,13 @@ async function embedToStreams(embedPath, quality, language, ctx) {
       ];
     }
     if (videoUrl) {
-      const nested = await resolveEmbedStreams(videoUrl, {
+      const nested2 = await resolveEmbedStreams(videoUrl, {
         language,
         providerLabel: LABEL19,
         siteUrl: SITE20,
         quality
       });
-      if (nested.length > 0) return nested;
+      if (nested2.length > 0) return nested2;
     }
   }
   return resolveEmbedStreams(embedUrl, {
@@ -33964,23 +33973,23 @@ function isRedirectedPage(html3, url) {
   const pathOf = (value) => value.replace(/^https?:\/\/[^/]+/, "").replace(/\/+$/, "").toLowerCase();
   return pathOf(canonical[1]) !== pathOf(url);
 }
-async function fetchPage7(url, ctx, cache3) {
-  const cached2 = cache3.get(url);
+async function fetchPage7(url, ctx, cache4) {
+  const cached2 = cache4.get(url);
   if (cached2 !== void 0) return cached2;
   const html3 = await siteFetchText(url, {
     acceptLanguage: FR_ACCEPT_LANGUAGE,
     timeoutMs: 8e3,
     signal: ctx.signal,
-    noBypass: cache3.size > 0
+    noBypass: cache4.size > 0
   });
   const usable = html3 && html3.length > 500 && !isRedirectedPage(html3, url) ? html3 : null;
-  cache3.set(url, usable);
+  cache4.set(url, usable);
   return usable;
 }
-async function probeFirst(urls, ctx, cache3, probeStart) {
+async function probeFirst(urls, ctx, cache4, probeStart) {
   for (const url of urls.slice(0, MAX_PROBE_URLS)) {
     if (isAborted(ctx.signal) || isBudgetExhausted(probeStart, PROBE_BUDGET_MS)) return null;
-    if (await fetchPage7(url, ctx, cache3)) return url;
+    if (await fetchPage7(url, ctx, cache4)) return url;
   }
   return null;
 }
@@ -34014,7 +34023,7 @@ async function wordpressSearch(query, season, ctx) {
   results.sort((a, b) => b.score - a.score);
   return results.filter((r) => r.score >= 30).slice(0, 4).map((r) => ({ title: r.title, url: r.url }));
 }
-async function searchAnime12(title2, season, ctx, cache3, probeStart) {
+async function searchAnime12(title2, season, ctx, cache4, probeStart) {
   const baseSlug = toSlug(title2);
   const results = [];
   if (season > 1 && baseSlug.length > 3) {
@@ -34027,7 +34036,7 @@ async function searchAnime12(title2, season, ctx, cache3, probeStart) {
       const found = await probeFirst(
         slugs.map((s) => `${SITE21}/anime/${s}/`),
         ctx,
-        cache3,
+        cache4,
         probeStart
       );
       if (found) {
@@ -34039,8 +34048,8 @@ async function searchAnime12(title2, season, ctx, cache3, probeStart) {
   if (baseSlug.length > 3 && !isBudgetExhausted(probeStart, PROBE_BUDGET_MS)) {
     const exactUrl = `${SITE21}/anime/${baseSlug}/`;
     const exactVfUrl = `${SITE21}/anime/${baseSlug}-vf/`;
-    if (await fetchPage7(exactUrl, ctx, cache3)) results.push({ title: title2, url: exactUrl });
-    if (!isAborted(ctx.signal) && await fetchPage7(exactVfUrl, ctx, cache3)) {
+    if (await fetchPage7(exactUrl, ctx, cache4)) results.push({ title: title2, url: exactUrl });
+    if (!isAborted(ctx.signal) && await fetchPage7(exactVfUrl, ctx, cache4)) {
       results.push({ title: `${title2} VF`, url: exactVfUrl });
     }
     if (results.length > 0) return results;
@@ -34107,7 +34116,7 @@ async function searchAnime12(title2, season, ctx, cache3, probeStart) {
       const found = await probeFirst(
         uniqueAltSlugs.map((s) => `${SITE21}/anime/${s}/`),
         ctx,
-        cache3,
+        cache4,
         probeStart
       );
       if (found) {
@@ -34171,7 +34180,7 @@ function isSlow(url) {
   const lower = (url || "").toLowerCase();
   return SLOW_EMBEDS.some((p) => lower.includes(p));
 }
-async function generateEpisodeUrl(html3, targetEp, ctx, cache3, probeStart) {
+async function generateEpisodeUrl(html3, targetEp, ctx, cache4, probeStart) {
   const $2 = loadHtml(html3);
   const firstLink = $2(".wp-manga-chapter a").first();
   if (firstLink.length === 0) return null;
@@ -34184,7 +34193,7 @@ async function generateEpisodeUrl(html3, targetEp, ctx, cache3, probeStart) {
   for (const pad of ["0", ""]) {
     if (isAborted(ctx.signal) || isBudgetExhausted(probeStart, PROBE_BUDGET_MS)) return null;
     const url = `${SITE21}/anime/${slugName}/${prefix}${pad}${targetEp}${suffix}/`;
-    if (await fetchPage7(url, ctx, cache3)) return url;
+    if (await fetchPage7(url, ctx, cache4)) return url;
   }
   return null;
 }
@@ -34298,7 +34307,7 @@ async function extract22(ctx) {
   if (isAborted(ctx.signal) || ctx.titles.length === 0) return [];
   const startTime = Date.now();
   const season = ctx.season ?? 1;
-  const cache3 = /* @__PURE__ */ new Map();
+  const cache4 = /* @__PURE__ */ new Map();
   const episodes = [ctx.absoluteEpisode, ctx.episode].filter(
     (value, index2, all) => typeof value === "number" && value > 0 && all.indexOf(value) === index2
   );
@@ -34321,7 +34330,7 @@ async function extract22(ctx) {
   }
   for (const url of probeUrls.slice(0, MAX_PROBE_URLS)) {
     if (isAborted(ctx.signal) || isBudgetExhausted(startTime, PROBE_BUDGET_MS)) break;
-    if (!await fetchPage7(url, ctx, cache3)) continue;
+    if (!await fetchPage7(url, ctx, cache4)) continue;
     const urlSlug = url.match(/\/anime\/([^/]+)\/$/)?.[1]?.replace(/-vf$/, "");
     const matchingTitle = orderedTitles.find((t) => toSlug(t) === urlSlug);
     const isVf = url.includes("-vf");
@@ -34331,7 +34340,7 @@ async function extract22(ctx) {
   if (matches.length === 0) {
     for (const title2 of orderedTitles) {
       if (isAborted(ctx.signal) || isBudgetExhausted(startTime)) break;
-      const found = await searchAnime12(title2, season, ctx, cache3, startTime);
+      const found = await searchAnime12(title2, season, ctx, cache4, startTime);
       if (found.length > 0) {
         matches.push(...found);
         break;
@@ -34346,13 +34355,13 @@ async function extract22(ctx) {
     if (checkedUrls.has(match2.url)) continue;
     checkedUrls.add(match2.url);
     const language = match2.title.toUpperCase().includes("VF") || match2.url.includes("-vf") ? "VF" : "VOSTFR";
-    const html3 = await fetchPage7(match2.url, ctx, cache3);
+    const html3 = await fetchPage7(match2.url, ctx, cache4);
     if (!html3) continue;
     let episodeUrl = findEpisodeUrl5(html3, episodes, ctx.type === "tv" ? season : void 0);
     if (!episodeUrl) {
       for (const ep of episodes) {
         if (isAborted(ctx.signal) || isBudgetExhausted(startTime)) break;
-        const generated = await generateEpisodeUrl(html3, ep, ctx, cache3, startTime);
+        const generated = await generateEpisodeUrl(html3, ep, ctx, cache4, startTime);
         if (generated) {
           episodeUrl = generated;
           break;
@@ -39459,6 +39468,459 @@ var MULTIDUB_PROVIDERS = [
   vidup
 ];
 
+// src/utils/torrent/tokens.ts
+var STOPWORDS = /* @__PURE__ */ new Set([
+  "the",
+  "and",
+  "for",
+  "with",
+  "from",
+  "this",
+  "that",
+  "her",
+  "his",
+  "are",
+  "was",
+  "were",
+  "has",
+  "have",
+  "had",
+  "who",
+  "what",
+  "when",
+  "where",
+  "why",
+  "how",
+  "all",
+  "any",
+  "one",
+  "two",
+  "season",
+  "episode",
+  "part",
+  "arc",
+  "movie",
+  "film",
+  "ova",
+  "ona",
+  "special",
+  "cour",
+  "hen",
+  "tan",
+  "boku",
+  "ore",
+  "kimi",
+  "sama",
+  "san",
+  "kun",
+  "chan",
+  "suru",
+  "naru",
+  "nani",
+  "desu",
+  "dake",
+  "made",
+  "demo",
+  "inai",
+  "koi",
+  "ken",
+  "shi",
+  "dan",
+  "wa",
+  "ga",
+  "wo",
+  "ni",
+  "de"
+]);
+function significantTokens(title2) {
+  return String(title2 || "").toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter((t) => t.length >= 3 && !STOPWORDS.has(t) && !/^\d+(?:st|nd|rd|th)$/.test(t));
+}
+
+// src/utils/torrent/show-facts.ts
+var ANILIST_GRAPHQL4 = "https://graphql.anilist.co";
+var NODE = "id episodes format title{romaji english}";
+function nested(depth) {
+  let inner = NODE;
+  for (let i = 0; i < depth; i++) inner = `${NODE} relations{edges{relationType node{${inner}}}}`;
+  return inner;
+}
+var CHAIN_QUERY = `query($id:Int){Media(id:$id){${NODE} status startDate{year} nextAiringEpisode{episode} relations{edges{relationType node{${nested(2)}}}}}}`;
+var STEP_QUERY = `query($id:Int){Media(id:$id){${NODE} relations{edges{relationType node{${NODE}}}}}}`;
+async function anilist(query, id) {
+  for (let attempt2 = 0; attempt2 < 2; attempt2++) {
+    try {
+      const res = await fetchResponse(ANILIST_GRAPHQL4, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json", Referer: "https://anilist.co/" },
+        body: JSON.stringify({ query, variables: { id } }),
+        timeoutMs: 8e3
+      });
+      if (res.status === 429) return void 0;
+      if (!res.ok) continue;
+      const json = JSON.parse(await res.text());
+      if (json.errors && !json.data) return void 0;
+      return json.data?.Media ?? null;
+    } catch {
+      continue;
+    }
+  }
+  return void 0;
+}
+var SERIES_FORMATS = /* @__PURE__ */ new Set(["TV", "TV_SHORT", "ONA"]);
+function prequelOf(node2) {
+  const edges = node2?.relations?.edges ?? [];
+  return edges.filter((e) => e.relationType === "PREQUEL" && e.node && SERIES_FORMATS.has(e.node.format ?? "")).map((e) => e.node).sort((a, b) => (b.episodes ?? 0) - (a.episodes ?? 0))[0] ?? null;
+}
+function entryOf(node2) {
+  const tokens = /* @__PURE__ */ new Set();
+  for (const t of [node2.title?.romaji, node2.title?.english]) for (const tok of significantTokens(t ?? "")) tokens.add(tok);
+  return { episodes: node2.episodes ?? 0, tokens };
+}
+async function fetchFacts(anilistId) {
+  const root2 = await anilist(CHAIN_QUERY, anilistId);
+  if (root2 === void 0) return void 0;
+  if (root2 === null) return { nextAiring: null, startYear: null, format: null, episodes: null, prequels: [] };
+  const next2 = Number(root2.nextAiringEpisode?.episode);
+  const facts = {
+    nextAiring: Number.isInteger(next2) && next2 > 0 ? next2 : null,
+    startYear: Number.isInteger(root2.startDate?.year) ? root2.startDate.year : null,
+    format: root2.format ?? null,
+    episodes: Number.isInteger(root2.episodes) && root2.episodes > 0 ? root2.episodes : null,
+    prequels: []
+  };
+  const seen = /* @__PURE__ */ new Set([anilistId]);
+  let node2 = root2;
+  let lastId = anilistId;
+  let needsStep = false;
+  while (facts.prequels.length < 12) {
+    const p = prequelOf(node2);
+    if (!p) {
+      if (node2 !== root2 && !node2?.relations?.edges?.length) needsStep = true;
+      break;
+    }
+    if (!p.episodes || seen.has(p.id)) break;
+    facts.prequels.push(entryOf(p));
+    seen.add(p.id);
+    lastId = p.id;
+    if (p.relations == null) {
+      needsStep = true;
+      break;
+    }
+    node2 = p;
+  }
+  for (let depth = 0; needsStep && depth < 12 && facts.prequels.length < 12; depth++) {
+    const media = await anilist(STEP_QUERY, lastId);
+    if (media === void 0) return void 0;
+    const p = prequelOf(media);
+    if (!p || !p.episodes || seen.has(p.id)) break;
+    facts.prequels.push(entryOf(p));
+    seen.add(p.id);
+    lastId = p.id;
+  }
+  return facts;
+}
+var cache3 = /* @__PURE__ */ new Map();
+var inflight3 = /* @__PURE__ */ new Map();
+async function getShowFacts(anilistId) {
+  if (!anilistId || !Number.isFinite(anilistId) || anilistId <= 0) return null;
+  const hit = cache3.get(anilistId);
+  if (hit) return hit;
+  const running = inflight3.get(anilistId);
+  if (running) return running;
+  const task = fetchFacts(anilistId).then((f) => {
+    if (!f) return null;
+    if (cache3.size > 300) cache3.clear();
+    cache3.set(anilistId, f);
+    return f;
+  }).catch(() => null).finally(() => inflight3.delete(anilistId));
+  inflight3.set(anilistId, task);
+  return task;
+}
+function sharesRun(showTokens, prequel) {
+  if (!showTokens.size || !prequel.size) return true;
+  let shared = 0;
+  for (const t of prequel) if (showTokens.has(t)) shared++;
+  return shared / showTokens.size >= 0.5;
+}
+function episodeCandidates6(facts, episode, showTokens) {
+  const out = [episode];
+  if (!facts || !(episode > 0)) return out;
+  let running = 0;
+  for (const p of facts.prequels) {
+    if (!p.episodes) continue;
+    if (!sharesRun(showTokens, p.tokens) && running >= 10 && !out.includes(episode + running)) out.push(episode + running);
+    running += p.episodes;
+  }
+  if (running >= 10 && !out.includes(episode + running)) out.push(episode + running);
+  return out;
+}
+function episodeNotAired(facts, episode) {
+  return !!facts && facts.nextAiring !== null && episode >= facts.nextAiring;
+}
+
+// src/utils/torrent/tiers.ts
+var RELEASE_WORDS = /* @__PURE__ */ new Set([
+  "uncensored",
+  "censored",
+  "dual",
+  "audio",
+  "multi",
+  "sub",
+  "subs",
+  "subbed",
+  "dub",
+  "dubbed",
+  "english",
+  "eng",
+  "batch",
+  "complete",
+  "web",
+  "webrip",
+  "bluray",
+  "hevc",
+  "avc",
+  "remastered",
+  "repack",
+  "proper",
+  "final",
+  "raw",
+  "raws",
+  "hdr",
+  "uhd",
+  "aac",
+  "flac",
+  "opus",
+  "tv",
+  "bd",
+  "dvd"
+]);
+function tokenSet(titles) {
+  const out = /* @__PURE__ */ new Set();
+  for (const t of titles) for (const tok of significantTokens(t)) out.add(tok);
+  return out;
+}
+function escapeRe(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function hasWord(tok, lowerTitle) {
+  return new RegExp(`(?<![\\p{L}\\p{N}])${escapeRe(tok)}(?![\\p{L}\\p{N}])`, "u").test(lowerTitle);
+}
+function stripLangCodes(title2) {
+  return title2.replace(/\[[A-Z]{2,3}(?:-[A-Z]{2,3})?\]/g, " ");
+}
+function showNamePart(title2) {
+  let t = String(title2 || "").replace(/^\s*[[(【][^\])】]*[\])】]\s*/, "");
+  const se = t.search(/\bS\d{1,2}E\d{1,4}\b/i);
+  if (se > 0) t = t.slice(0, se);
+  const dash = /[\s._][-~]\s*\d{1,4}(?:v\d)?(?=[\s[(.]|$)/g;
+  let last2 = -1;
+  let m;
+  while ((m = dash.exec(t)) !== null) last2 = m.index;
+  if (last2 > 0) t = t.slice(0, last2);
+  const epWord = t.search(/\bEP?\.?\s*\d{1,4}\b/i);
+  if (epWord > 0) t = t.slice(0, epWord);
+  t = t.split(/[[(]/)[0];
+  return t.replace(/[._]/g, " ").trim().replace(/[\s:_-]+$/, "");
+}
+function nameIntroducesForeignWord(title2, showTokens) {
+  for (const tok of significantTokens(showNamePart(title2))) {
+    if (/^\d+$/.test(tok) || RELEASE_WORDS.has(tok)) continue;
+    if (!showTokens.has(tok)) return true;
+  }
+  return false;
+}
+function titleEpisodeMarkers(title2) {
+  const out = [];
+  const push = (a, b) => {
+    const lo = parseInt(a, 10);
+    const hi = b == null ? lo : parseInt(b, 10);
+    if (Number.isInteger(lo) && Number.isInteger(hi) && hi >= lo && !out.some(([x, y]) => x === lo && y === hi)) out.push([lo, hi]);
+  };
+  const name = title2.replace(/\.(mkv|mp4|avi|m4v|webm|mov)$/i, "");
+  let m;
+  const se = /\bs\d{1,2}[\s._-]*e(\d{1,4})(?:\s*[-~]\s*(?:s\d{1,2})?e?(\d{1,4}))?\b/gi;
+  while ((m = se.exec(name)) !== null) push(m[1], m[2]);
+  const ep = /\bep(?:isode)?\.?\s*(\d{1,4})\b/gi;
+  while ((m = ep.exec(name)) !== null) push(m[1]);
+  const dash = /[\s._]-\s*(\d{1,4})(?:v\d)?\s*(?=[[(]|$)/g;
+  while ((m = dash.exec(name)) !== null) push(m[1]);
+  const range = /(?<![\d.])(\d{1,4})\s*[-~]\s*(\d{1,4})(?![\d.]|p\b)/g;
+  while ((m = range.exec(name)) !== null) {
+    const a = parseInt(m[1], 10);
+    const b = parseInt(m[2], 10);
+    if (b > a && b - a < 400) push(m[1], m[2]);
+  }
+  if (!out.length) {
+    const p = parseEpisodeFromTitle(name);
+    if (p.episodeNumber !== null) {
+      const n = p.episodeNumber;
+      if (!(n >= 1930 && n <= 2099)) out.push([n, p.episodeEnd ?? n]);
+    }
+  }
+  return out;
+}
+function isPack(title2, markers) {
+  return markers.some(([lo, hi]) => hi > lo) || /\b(?:batch|complete)\b/i.test(title2);
+}
+var YEAR_RE = /(?:^|[\s._[(\-])(19[3-9]\d|20\d{2})(?=[\s._\])\-]|$)/g;
+function detectYears(text3) {
+  const out = /* @__PURE__ */ new Set();
+  for (const m of String(text3 || "").matchAll(YEAR_RE)) out.add(parseInt(m[1], 10));
+  return out;
+}
+function titleNumbersOf(titles) {
+  const out = /* @__PURE__ */ new Set();
+  for (const t of titles) {
+    const years = detectYears(t);
+    for (const m of String(t || "").matchAll(/(?<![\p{L}\d])(\d{1,4})(?![\d])/gu)) {
+      const n = parseInt(m[1], 10);
+      if (!years.has(n)) out.add(n);
+    }
+  }
+  return out;
+}
+function arcTokens(titles) {
+  const out = /* @__PURE__ */ new Set();
+  for (const t of titles) {
+    const m = String(t || "").match(/^(.*)(?::|\s[-–]\s)(.+)$/);
+    if (!m) continue;
+    const head = new Set(significantTokens(m[1]));
+    for (const tok of significantTokens(m[2])) if (!head.has(tok) && !/^\d+$/.test(tok)) out.add(tok);
+  }
+  return out;
+}
+function primaryTokenCount(titles) {
+  const counted = titles.map((t) => {
+    const compact = String(t || "").replace(/\s/g, "");
+    const latin = compact.replace(/[^\p{Script=Latin}\p{N}\p{P}\p{S}]/gu, "");
+    return { n: significantTokens(t).length, latin: compact.length ? latin.length / compact.length >= 0.5 : false };
+  }).filter((x) => x.n > 0);
+  return (counted.find((x) => x.latin) ?? counted[0])?.n ?? 0;
+}
+async function buildTierContext(opts, facts) {
+  const episode = opts.episode && opts.episode > 0 ? opts.episode : 0;
+  const showTokens = tokenSet(opts.titles ?? []);
+  const titles = opts.titles ?? [];
+  const f = facts !== void 0 ? facts : await getShowFacts(opts.anilistId);
+  const singleEpisode = !!f && (f.format === "MOVIE" || f.episodes === 1);
+  const showYears = /* @__PURE__ */ new Set();
+  for (const t of titles) for (const y of detectYears(t)) showYears.add(y);
+  if (!showYears.size && singleEpisode && f?.startYear) for (const d of [-1, 0, 1]) showYears.add(f.startYear + d);
+  return {
+    episode,
+    candidates: episode > 0 ? episodeCandidates6(f, episode, showTokens) : [],
+    notAired: episode > 0 && episodeNotAired(f, episode),
+    showTokens,
+    primaryCount: primaryTokenCount(opts.titles ?? []),
+    arcTokens: arcTokens(titles),
+    showYears,
+    singleEpisode,
+    titleNumbers: titleNumbersOf(titles)
+  };
+}
+function classifyRelease(title2, ctx, opts = {}) {
+  if (!opts.knownShow) {
+    const primary = ctx.primaryCount || significantTokens(opts.matchTitle ?? "").length;
+    const minHits = primary >= 3 ? 2 : 1;
+    if (ctx.showTokens.size) {
+      const lower = stripLangCodes(title2).toLowerCase();
+      let hits = 0;
+      for (const tok of ctx.showTokens) if (hasWord(tok, lower)) hits++;
+      if (hits < minHits) return null;
+    }
+    if (primary === 1 && nameIntroducesForeignWord(title2, ctx.showTokens)) return null;
+    if (ctx.arcTokens?.size) {
+      const lower = stripLangCodes(title2).toLowerCase();
+      const namesArc = [...ctx.arcTokens].some((tok) => hasWord(tok, lower));
+      if (!namesArc && nameIntroducesForeignWord(title2, ctx.showTokens)) return null;
+    }
+  }
+  const tiered = classifyEpisode(title2, ctx, opts.wanted ?? ctx.candidates);
+  if (!tiered || tiered.tier === "C" || !ctx.showYears?.size) return tiered;
+  const years = detectYears(title2);
+  if (years.size && ![...years].some((y) => ctx.showYears.has(y))) return { tier: "C", hit: null };
+  return tiered;
+}
+function classifyEpisode(title2, ctx, wanted) {
+  const markers = titleEpisodeMarkers(title2).filter(([lo, hi]) => {
+    if (!ctx.titleNumbers?.has(lo)) return true;
+    return lo === hi && wanted.includes(lo);
+  });
+  if (ctx.singleEpisode) {
+    if (/\bS\d{1,2}(?:E\d{1,4}|\b)/i.test(title2)) return null;
+    if (markers.some(([lo, hi]) => hi > lo || lo > 1)) return null;
+    if (markers.length && ctx.showYears?.size && !detectYears(title2).size) return { tier: "B", hit: null };
+    return { tier: "A", hit: null };
+  }
+  if (!(ctx.episode > 0)) return { tier: "A", hit: null };
+  if (!markers.length) return { tier: "C", hit: null };
+  const pack = isPack(title2, markers);
+  if (!pack) {
+    for (const w of wanted) if (markers.some(([lo, hi]) => lo === w && hi === w)) return { tier: "A", hit: w };
+  }
+  for (const w of wanted) if (markers.some(([lo, hi]) => hi > lo && w >= lo && w <= hi)) return { tier: "B", hit: w };
+  if (pack && !markers.some(([lo, hi]) => hi > lo)) return { tier: "C", hit: null };
+  return null;
+}
+var WEEK_MS = 7 * 24 * 60 * 60 * 1e3;
+var TIER_ORDER = { A: 0, B: 1, C: 2 };
+function selectByTier(inputs, ctx, now = Date.now()) {
+  const classify = (x, wanted) => {
+    if (x.exactEpisode && ctx.episode > 0 && (!wanted || wanted.includes(ctx.episode))) return { tier: "A", hit: ctx.episode };
+    return classifyRelease(x.title, ctx, { matchTitle: x.matchTitle, wanted, knownShow: x.knownShow });
+  };
+  let chosen = ctx.candidates;
+  if (ctx.candidates.length > 1) {
+    const newest = /* @__PURE__ */ new Map();
+    for (const n of ctx.candidates) {
+      for (const x of inputs) {
+        if (classify(x, [n])?.tier !== "A") continue;
+        newest.set(n, Math.max(newest.get(n) ?? -1, x.publishedAt || 0));
+      }
+    }
+    if (newest.size) {
+      const best = Math.max(...newest.values());
+      chosen = ctx.candidates.filter((n) => newest.has(n) && best - newest.get(n) <= WEEK_MS);
+    } else {
+      chosen = [ctx.episode];
+    }
+  }
+  const out = [];
+  for (const x of inputs) {
+    const c = classify(x, chosen);
+    if (c) out.push({ ...c, item: x.item });
+  }
+  if (ctx.notAired) {
+    return out.filter((o) => {
+      if (o.tier !== "A") return false;
+      const at = inputs.find((x) => x.item === o.item)?.publishedAt ?? 0;
+      return at > 0 && now - at <= WEEK_MS;
+    });
+  }
+  const kept = out.some((o) => o.tier === "A") ? out.filter((o) => o.tier !== "C") : out;
+  return kept.map((o, i) => ({ o, i })).sort((a, b) => TIER_ORDER[a.o.tier] - TIER_ORDER[b.o.tier] || a.i - b.i).map(({ o }) => o);
+}
+function capByTier(score, tier) {
+  if (tier === "B") return Math.min(score, 70);
+  if (tier === "C") return Math.min(score, 30);
+  return score;
+}
+
+// src/utils/torrent/preferences.ts
+function hitsExclusion(title2, exclusions) {
+  if (!exclusions?.length) return false;
+  const lower = title2.toLowerCase();
+  return exclusions.some((kw) => {
+    const k = String(kw ?? "").trim().toLowerCase();
+    return k.length > 0 && lower.includes(k);
+  });
+}
+function matchesResolution(title2, resolution) {
+  const digits = String(resolution ?? "").match(/\d{3,4}/)?.[0];
+  if (!digits) return true;
+  return new RegExp(`(?<!\\d)${digits}p?(?!\\d)`, "i").test(title2);
+}
+
 // src/utils/torrent/search-titles.ts
 function searchTitles(titles) {
   const out = [];
@@ -39468,7 +39930,8 @@ function searchTitles(titles) {
     if (!out.some((o) => o.toLowerCase() === t.toLowerCase())) out.push(t);
   };
   const plain = (t) => t.replace(/[★☆♪♫♥♡◆◇●○■□△▽・×〜~!！?？]/g, " ");
-  for (const t of titles.slice(0, 8)) {
+  for (const raw of titles.slice(0, 8)) {
+    const t = stripTrailingYear(raw);
     const head = t.split(/[:：]/)[0];
     for (const v of [t, head]) {
       if (plain(v) !== v) add2(plain(v));
@@ -39476,7 +39939,61 @@ function searchTitles(titles) {
     }
   }
   const latin = (t) => /^[\p{Script=Latin}\p{N}\p{P}\p{S}\s]+$/u.test(t);
-  return [...out.filter(latin), ...out.filter((t) => !latin(t))].slice(0, 3);
+  const ordered = [...out.filter(latin), ...out.filter((t) => !latin(t))];
+  return [...ordered.filter((t) => !isDegenerate(t)), ...ordered.filter(isDegenerate)].slice(0, 3);
+}
+var GENERIC_QUERY_WORDS = /* @__PURE__ */ new Set([
+  "monster",
+  "level",
+  "hero",
+  "world",
+  "girl",
+  "boy",
+  "demon",
+  "devil",
+  "dragon",
+  "angel",
+  "king",
+  "queen",
+  "story",
+  "magic",
+  "school",
+  "love",
+  "life",
+  "club",
+  "sword",
+  "blood",
+  "dark",
+  "light",
+  "night",
+  "master",
+  "star",
+  "moon",
+  "witch",
+  "ghost",
+  "dead",
+  "zombie",
+  "idol",
+  "another"
+]);
+function isDegenerate(title2) {
+  const toks = significantTokens(title2);
+  return toks.length <= 1 && ((toks[0] ?? "").length < 4 || GENERIC_QUERY_WORDS.has(toks[0] ?? ""));
+}
+function stripTrailingYear(title2) {
+  return title2.replace(/\s*[(\[]\s*(?:19|20)\d{2}\s*[)\]]\s*$/, "").trim() || title2;
+}
+var TITLE_ALIASES = {
+  21: ["One Piece"],
+  235: ["Detective Conan", "Meitantei Conan"],
+  108632: ["Re Zero kara Hajimeru", "ReZero Starting Life"],
+  116674: ["Bleach Sennen Kessen-hen", "Bleach Thousand-Year Blood War"],
+  159322: ["Bleach Sennen Kessen-hen", "Bleach Thousand-Year Blood War"],
+  169755: ["Bleach Sennen Kessen-hen", "Bleach Thousand-Year Blood War"],
+  185874: ["Bleach Sennen Kessen-hen", "Bleach Thousand-Year Blood War"]
+};
+function aliasTitles(anilistId) {
+  return anilistId ? [...TITLE_ALIASES[anilistId] ?? []] : [];
 }
 async function firstWithResults(titles, run) {
   for (const t of searchTitles(titles)) {
@@ -39529,33 +40046,58 @@ function seasonMismatch(name, wanted) {
 
 // src/providers/torrent/nyaa.ts
 var UA30 = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36";
-var MAGNET_TRACKERS2 = [
-  "http://nyaa.tracker.wf:7777/announce",
-  "udp://open.stealth.si:80/announce",
-  "udp://tracker.opentrackr.org:1337/announce",
-  "udp://tracker.torrent.eu.org:451/announce"
-].map((t) => `&tr=${encodeURIComponent(t)}`).join("");
 var BASES7 = ["https://nyaa.si", "https://nyaa.land"];
 async function fetchRssItems(query) {
-  const endpoints = BASES7.map(
-    (base) => `${base}/?page=rss&q=${encodeURIComponent(query)}&c=1_0&f=0`
-  );
-  for (const url of endpoints) {
+  let status = "error";
+  for (const base of BASES7) {
+    const url = `${base}/?page=rss&q=${encodeURIComponent(query)}&c=1_0&f=0`;
     try {
       const res = await fetchResponse(url, {
-        headers: { "User-Agent": UA30 },
+        headers: { "User-Agent": UA30, Accept: "application/rss+xml, application/xml, text/xml, */*" },
         signal: AbortSignal.timeout(8e3)
       });
+      if (res.status === 429) {
+        status = "limited";
+        continue;
+      }
       if (!res.ok) continue;
       const text3 = await res.text();
-      const items = text3.match(/<item>([\s\S]*?)<\/item>/g) ?? [];
-      if (items.length > 0) return items;
+      if (!text3.includes("<rss") && !text3.includes("<item>")) {
+        if (status !== "limited") status = "challenge";
+        continue;
+      }
+      return { items: text3.match(/<item>([\s\S]*?)<\/item>/g) ?? [], status: "ok" };
     } catch {
       continue;
     }
   }
-  return [];
+  return { items: [], status };
 }
+function decodeEntities2(s) {
+  return s.replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10))).replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCharCode(parseInt(n, 16))).replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+}
+function parseItem(item, animeTitle) {
+  const rawTitle = item.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/)?.[1] ?? item.match(/<title>(.*?)<\/title>/)?.[1] ?? "";
+  const torrentTitle = decodeEntities2(rawTitle);
+  if (!torrentTitle) return null;
+  const torrentUrl = item.match(/<enclosure[^>]+url="([^"]+)"/)?.[1] ?? item.match(/<link>\s*(https?:\/\/[^<]+)\s*<\/link>/)?.[1] ?? "";
+  const infoHash = item.match(/<nyaa:infoHash>(.*?)<\/nyaa:infoHash>/)?.[1] ?? torrentUrl.match(/download\/([a-f0-9]{40})/i)?.[1] ?? "";
+  const pub = Date.parse(item.match(/<pubDate>(.*?)<\/pubDate>/)?.[1] ?? "");
+  return {
+    animeTitle,
+    torrentTitle,
+    torrentUrl,
+    infoHash,
+    seeders: parseInt(item.match(/<nyaa:seeders>(.*?)<\/nyaa:seeders>/)?.[1] ?? "0", 10),
+    leechers: parseInt(item.match(/<nyaa:leechers>(.*?)<\/nyaa:leechers>/)?.[1] ?? "0", 10),
+    fileSize: item.match(/<nyaa:size>(.*?)<\/nyaa:size>/)?.[1] ?? "",
+    publishedAt: Number.isFinite(pub) ? pub : 0,
+    trusted: /<nyaa:trusted>\s*Yes/i.test(item),
+    remake: /<nyaa:remake>\s*Yes/i.test(item)
+  };
+}
+var pad2 = (n) => String(n).padStart(2, "0");
+var TIER_RANK = { A: 0, B: 1, C: 2 };
 var provider23 = {
   name: "nyaa",
   sites: BASES7,
@@ -39564,64 +40106,91 @@ var provider23 = {
     const titles = searchTitles((opts.titles ?? []).map(stripSeason));
     const ep = opts.episode ?? 0;
     if (titles.length === 0) return [];
-    const epPad3 = ep > 0 ? String(ep).padStart(3, "0") : "";
-    const epPad2 = ep > 0 ? String(ep).padStart(2, "0") : "";
-    const ss = season ? String(season).padStart(2, "0") : "";
-    const plan = titles.flatMap((animeTitle) => (ep > 0 ? season && season > 1 ? [`${animeTitle} S${ss}E${epPad2}`, `${animeTitle} S${season} - ${epPad2}`, `${animeTitle} - ${epPad2}`, animeTitle] : [`${animeTitle} - ${epPad2}`, `${animeTitle} ${epPad2}`, `${animeTitle} - ${epPad3}`, animeTitle] : [animeTitle]).map((query) => ({ animeTitle, query })));
+    const ctx = await buildTierContext({ anilistId: opts.anilistId, titles: opts.titles ?? [], episode: ep });
     const seen = /* @__PURE__ */ new Set();
-    const results = [];
-    for (const { animeTitle, query } of plan) {
-      if (results.length >= 50) break;
-      const items = await fetchRssItems(query);
+    const raw = [];
+    let stopped = null;
+    let lastStatus = "ok";
+    const run = async (query, animeTitle) => {
+      if (stopped) return;
+      const { items, status } = await fetchRssItems(query);
+      lastStatus = status;
+      if (status === "limited") {
+        stopped = status;
+        return;
+      }
       for (const item of items) {
-        const torrentUrl = item.match(/<enclosure[^>]+url="([^"]+)"/)?.[1] ?? item.match(/<link>\s*(https?:\/\/[^<]+)\s*<\/link>/)?.[1] ?? "";
-        const torrentTitle = item.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/)?.[1] ?? item.match(/<title>(.*?)<\/title>/)?.[1] ?? "";
-        if (!torrentTitle) continue;
-        if (seen.has(torrentTitle)) continue;
-        if (ep > 0 && isBatchTitle(torrentTitle)) continue;
-        const infoHashRaw = item.match(/<nyaa:infoHash>(.*?)<\/nyaa:infoHash>/)?.[1] ?? torrentUrl.match(/download\/([a-f0-9]{40})/i)?.[1] ?? "";
-        let magnetLink = "";
-        if (infoHashRaw) {
-          magnetLink = buildMagnet(infoHashRaw, torrentTitle);
+        const r = parseItem(item, animeTitle);
+        if (!r) continue;
+        const key = r.infoHash.toLowerCase() || r.torrentTitle;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        raw.push(r);
+      }
+    };
+    const select2 = () => selectByTier(
+      raw.filter((r) => !hitsExclusion(r.torrentTitle, opts.exclusions)).map((r) => ({ item: r, title: r.torrentTitle, publishedAt: r.publishedAt, matchTitle: r.animeTitle })),
+      ctx
+    ).filter(({ item, hit }) => {
+      if (!(ep > 0)) return true;
+      if (seasonMismatch(item.torrentTitle, season)) return false;
+      if (season && season > 1 && (hit === null || hit === ep) && releaseSeason(item.torrentTitle) === null) return false;
+      return true;
+    });
+    const hasExact = () => select2().some((p) => p.tier === "A");
+    for (const t of titles) await run(t, t);
+    if (ep > 0 && !ctx.notAired && !hasExact()) {
+      const ss = season ? pad2(season) : "";
+      const numbered = (t) => season && season > 1 ? [`${t} S${ss}E${pad2(ep)}`, `${t} S${season} - ${pad2(ep)}`, `${t} - ${pad2(ep)}`] : [`${t} - ${pad2(ep)}`, `${t} ${pad2(ep)}`, `${t} - ${String(ep).padStart(3, "0")}`];
+      for (const t of [...titles, ...aliasTitles(opts.anilistId)]) {
+        for (const q of numbered(t)) await run(q, t);
+        if (stopped || hasExact()) break;
+      }
+    }
+    if (ep > 0 && !ctx.notAired && ctx.candidates.length > 1 && !hasExact()) {
+      outer: for (const t of [...titles.slice(0, 2), ...aliasTitles(opts.anilistId)]) {
+        for (const n of ctx.candidates.slice(1)) {
+          await run(`${t} ${pad2(n)}`, t);
+          if (stopped) break outer;
+          if (hasExact()) break outer;
         }
-        const seeders = parseInt(item.match(/<nyaa:seeders>(.*?)<\/nyaa:seeders>/)?.[1] ?? "0", 10);
-        const leechers = parseInt(item.match(/<nyaa:leechers>(.*?)<\/nyaa:leechers>/)?.[1] ?? "0", 10);
-        const fileSize = item.match(/<nyaa:size>(.*?)<\/nyaa:size>/)?.[1] ?? "";
-        const matchScore = scoreTorrentResult(torrentTitle, animeTitle, ep, seeders);
-        if (ep > 0 && matchScore === 0) continue;
-        if (ep > 0 && seasonMismatch(torrentTitle, season)) continue;
-        if (ep > 0 && season && season > 1 && releaseSeason(torrentTitle) === null) continue;
-        seen.add(torrentTitle);
-        const url = magnetLink || torrentUrl;
-        if (!url) continue;
-        const parsed = parseEpisodeFromTitle(torrentTitle);
-        const releaseGroupMatch = torrentTitle.match(/^\[([^\]]{1,40})\]/);
-        const releaseGroup = releaseGroupMatch?.[1];
-        results.push({
+      }
+    }
+    if (!raw.length && (stopped === "limited" || lastStatus === "challenge")) {
+      throw new Error(stopped === "limited" ? "nyaa.si is rate-limiting requests; try again in a minute." : "nyaa.si answered with a ddos-guard challenge instead of results; try again in a minute.");
+    }
+    const results = [];
+    for (const { item: r, tier, hit } of select2()) {
+      const magnetLink = r.infoHash ? buildMagnet(r.infoHash, r.torrentTitle) : "";
+      const url = magnetLink || r.torrentUrl;
+      if (!url) continue;
+      const releaseGroup = r.torrentTitle.match(/^\[([^\]]{1,40})\]/)?.[1];
+      const score = tier === "C" ? Math.round(scoreTitleMatch(r.torrentTitle, r.animeTitle) * 0.3) : scoreTorrentResult(r.torrentTitle, r.animeTitle, hit ?? (ctx.singleEpisode ? 0 : ep), r.seeders);
+      results.push({
+        tier,
+        raw: r,
+        r: {
           source: "nyaa",
           url,
-          quality: normalizeQuality(torrentTitle),
+          quality: normalizeQuality(r.torrentTitle),
           headers: {},
           subtitles: [],
           sourceType: "torrent",
           audioLanguage: "ja",
-          torrentTitle,
+          torrentTitle: r.torrentTitle,
           magnetLink: magnetLink || void 0,
-          seeders,
-          leechers,
-          peers: seeders + leechers,
-          fileSize,
-          matchScore,
+          seeders: r.seeders,
+          leechers: r.leechers,
+          peers: r.seeders + r.leechers,
+          fileSize: r.fileSize,
+          matchScore: capByTier(score, tier),
           releaseGroup
-        });
-      }
+        }
+      });
     }
-    results.sort((a, b) => {
-      const ms = (b.matchScore ?? 0) - (a.matchScore ?? 0);
-      if (ms !== 0) return ms;
-      return (b.peers ?? 0) - (a.peers ?? 0);
-    });
-    return results.slice(0, 50);
+    const quality = (x) => x.remake ? 2 : x.trusted ? 0 : 1;
+    results.sort((a, b) => TIER_RANK[a.tier] - TIER_RANK[b.tier] || Number(matchesResolution(b.raw.torrentTitle, opts.resolution)) - Number(matchesResolution(a.raw.torrentTitle, opts.resolution)) || quality(a.raw) - quality(b.raw) || (b.r.matchScore ?? 0) - (a.r.matchScore ?? 0) || (b.r.peers ?? 0) - (a.r.peers ?? 0));
+    return results.slice(0, 50).map((x) => x.r);
   }
 };
 var nyaa_default = provider23;
@@ -39633,59 +40202,64 @@ function formatSize(bytes) {
   if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(0)} MB`;
   return `${(bytes / 1e3).toFixed(0)} KB`;
 }
-function matchesEpisode(title2, ep) {
-  if (!ep || ep <= 0) return true;
-  return scoreEpisodeMatch(title2, ep) > 0;
-}
 var BASE8 = "https://feed.animetosho.org";
+async function fetchItems(params) {
+  try {
+    const res = await fetchResponse(`${BASE8}/json?${params}`, { timeoutMs: 6e3 });
+    if (!res.ok) return [];
+    const json = await res.json();
+    return Array.isArray(json) ? json : [];
+  } catch {
+    return [];
+  }
+}
 var provider24 = {
   name: "animetosho",
   sites: [BASE8],
   async batch(opts) {
     const titles = opts.titles ?? [];
     const ep = opts.episode ?? 0;
-    if (titles.length === 0) return [];
-    const epStr = ep > 0 ? ` ${String(ep).padStart(2, "0")}` : "";
-    async function fetchItems(qStr) {
-      const url = `${BASE8}/json?q=${encodeURIComponent(qStr)}`;
-      try {
-        const res = await fetchResponse(url, {
-          timeoutMs: 6e3
-        });
-        if (!res.ok) return [];
-        const json = await res.json();
-        return Array.isArray(json) ? json : [];
-      } catch {
-        return [];
+    if (titles.length === 0 && !opts.anilistId) return [];
+    const [ctx, ids] = await Promise.all([
+      buildTierContext({ anilistId: opts.anilistId, titles, episode: ep }),
+      opts.anilistId ? getAnidbIds(opts.anilistId, ep > 0 ? ep : void 0) : Promise.resolve({ aid: null, eid: null })
+    ]);
+    const inputs = [];
+    const seen = /* @__PURE__ */ new Set();
+    const absorb = (items, how) => {
+      for (const item of items) {
+        const link = item.magnet_uri ?? item.torrent_url ?? "";
+        const title2 = item.title ?? "";
+        if (!link || !title2 || hitsExclusion(title2, opts.exclusions)) continue;
+        const key = (item.info_hash ?? link).toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        inputs.push({ item, title: title2, publishedAt: (item.timestamp ?? 0) * 1e3, ...how });
+      }
+    };
+    const hasExact = () => selectByTier(inputs, ctx).some((o) => o.tier === "A");
+    if (ep > 0 && ids.eid) absorb(await fetchItems(`eid=${ids.eid}`), { exactEpisode: true, knownShow: true });
+    if (ids.aid && !hasExact()) absorb(await fetchItems(`aid=${ids.aid}`), { knownShow: true });
+    if (!hasExact()) {
+      const epStr = ep > 0 ? ` ${String(ep).padStart(2, "0")}` : "";
+      for (const title2 of buildSearchQueries(titles)) {
+        let items = [];
+        if (ep > 0) items = await fetchItems(`q=${encodeURIComponent(`${title2}${epStr}`.trim())}`);
+        if (items.length === 0) items = await fetchItems(`q=${encodeURIComponent(title2)}`);
+        absorb(items, { matchTitle: title2 });
+        if (items.length > 0) break;
       }
     }
-    let items = [];
-    for (const title2 of buildSearchQueries(titles)) {
-      if (ep > 0) {
-        items = await fetchItems(`${title2}${epStr}`.trim());
-      }
-      if (items.length === 0) {
-        items = await fetchItems(title2);
-      }
-      if (items.length > 0) break;
-    }
-    if (!Array.isArray(items) || items.length === 0) return [];
+    const picked = selectByTier(inputs, ctx).map((o, i) => ({ o, i, res: matchesResolution(o.item.title ?? "", opts.resolution) ? 0 : 1 })).sort((a, b) => a.o.tier === b.o.tier ? a.res - b.res || a.i - b.i : a.i - b.i).map((x) => x.o);
     const results = [];
-    const seenLinks = /* @__PURE__ */ new Set();
-    for (const item of items) {
-      const link = item.magnet_uri ?? item.torrent_url ?? "";
-      if (!link || seenLinks.has(link)) continue;
+    for (const { item, tier } of picked) {
       const torrentTitle = item.title ?? "";
-      if (ep > 0) {
-        if (isBatchTitle(torrentTitle)) continue;
-        if (!matchesEpisode(torrentTitle, ep)) continue;
-      }
-      seenLinks.add(link);
       const seeders = item.seeders ?? 0;
       const leechers = item.leechers ?? 0;
+      const epScore = tier === "A" ? 100 : tier === "B" ? 80 : 30;
       results.push({
         source: "animetosho",
-        url: link,
+        url: item.magnet_uri ?? item.torrent_url ?? "",
         quality: normalizeQuality(torrentTitle),
         headers: {},
         subtitles: [],
@@ -39695,10 +40269,11 @@ var provider24 = {
         seeders,
         leechers,
         peers: seeders + leechers,
-        fileSize: formatSize(item.total_size)
+        fileSize: formatSize(item.total_size),
+        matchScore: capByTier(Math.round(40 + epScore * 0.5 + Math.min(10, seeders / 10)), tier)
       });
     }
-    return results.slice(0, 15);
+    return results.slice(0, 30);
   }
 };
 var animetosho_default = provider24;
@@ -39720,56 +40295,56 @@ var provider25 = {
   name: "subplease",
   sites: [BASE9],
   async batch(opts) {
-    return firstWithResults(opts.titles ?? [], (title2) => searchOne(opts, title2));
+    return firstWithResults((opts.titles ?? []).map(stripSeason), (title2) => searchOne(opts, title2));
   }
 };
+async function fetchFeed(url) {
+  try {
+    const res = await fetchResponse(url, { signal: AbortSignal.timeout(1e4) });
+    if (!res.ok) return null;
+    const text3 = (await res.text()).trim();
+    if (!text3.startsWith("{")) return null;
+    const data2 = JSON.parse(text3);
+    return data2 && typeof data2 === "object" && !Array.isArray(data2) && Object.keys(data2).length > 0 ? data2 : null;
+  } catch {
+    return null;
+  }
+}
 async function searchOne(opts, title2) {
   {
     const ep = opts.episode ?? 0;
     if (!title2) return [];
-    const url = `${BASE9}/api/?f=search&tz=UTC&s=${encodeURIComponent(title2)}`;
-    let res;
-    try {
-      res = await fetchResponse(url, { signal: AbortSignal.timeout(1e4) });
-    } catch {
-      return [];
-    }
-    if (!res.ok) return [];
-    let data2;
-    try {
-      data2 = await res.json();
-    } catch {
-      return [];
-    }
-    if (!data2 || typeof data2 !== "object") return [];
+    const data2 = await fetchFeed(`${BASE9}/api/?f=search&tz=UTC&s=${encodeURIComponent(title2)}`) ?? await fetchFeed(`${BASE9}/api/?f=latest&tz=UTC`);
+    if (!data2) return [];
     const results = [];
     const normalizedSearchTitle = normalizeTitle6(title2);
     const titleMatches2 = [];
+    const wanted = seasonOf(opts.titles ?? []);
     for (const key of Object.keys(data2)) {
       const show = data2[key];
       if (!show?.downloads || !Array.isArray(show.downloads)) continue;
       if (isBatch(key)) continue;
-      const wanted = seasonOf(opts.titles ?? []);
       if (seasonMismatch(key, wanted)) continue;
-      if (wanted && wanted > 1 && releaseSeason(key) === null) continue;
       const normalizedKeyTitle = normalizeTitle6(key.split("-")[0] || "");
       const titleMatch = normalizedKeyTitle.includes(normalizedSearchTitle) || normalizedSearchTitle.includes(normalizedKeyTitle);
       if (!titleMatch) continue;
       titleMatches2.push({ key, show });
     }
-    const shouldFallbackToLatest = ep > 0 && titleMatches2.length > 0 && !titleMatches2.some(({ key }) => {
-      const epFromField = data2[key]?.episode ? parseInt(data2[key].episode, 10) : null;
-      const epFromKey = parseEpisodeNumber(key);
-      const detectedEp = epFromField ?? epFromKey;
-      return detectedEp === ep || scoreEpisodeMatch(key, ep) > 0;
-    });
+    const ctx = ep > 0 ? await buildTierContext({ anilistId: opts.anilistId, titles: opts.titles ?? [], episode: ep }) : null;
+    const candidates = ctx?.candidates ?? [];
+    if (ctx?.notAired) {
+      for (let i = titleMatches2.length - 1; i >= 0; i--) {
+        const at = Date.parse(titleMatches2[i].show.release_date ?? "");
+        if (!(Number.isFinite(at) && Date.now() - at <= 7 * 24 * 60 * 60 * 1e3)) titleMatches2.splice(i, 1);
+      }
+    }
     for (const { key, show } of titleMatches2) {
-      if (ep > 0 && !shouldFallbackToLatest) {
+      if (ep > 0) {
         const epFromField = show.episode ? parseInt(show.episode, 10) : null;
-        const epFromKey = parseEpisodeNumber(key);
-        const detectedEp = epFromField ?? epFromKey;
+        const detectedEp = epFromField ?? parseEpisodeNumber(key);
         if (detectedEp !== null) {
-          if (detectedEp !== ep) continue;
+          if (!candidates.includes(detectedEp)) continue;
+          if (wanted && wanted > 1 && detectedEp === ep && releaseSeason(key) === null) continue;
         } else if (scoreEpisodeMatch(key, ep) === 0) {
           continue;
         }

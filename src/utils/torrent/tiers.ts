@@ -138,6 +138,36 @@ export interface TierContext {
   primaryCount: number;
   /** Words only an entry's subtitle has ("soukoku" of "Bleach: Sennen Kessen-hen - Soukoku-tan"). */
   arcTokens: Set<string>;
+  /**
+   * Years the show is known by: the ones its titles state ("False Memory (2026)"), or for a one-episode work its
+   * AniList start year ±1. A release dated to another year is only a guess.
+   */
+  showYears: Set<number>;
+  /** A movie or one-episode work: a release naming a season, a range or an episode above 1 is a series. */
+  singleEpisode: boolean;
+  /** Numbers that are part of the show's name ("86", "Kaiju No. 8", "Conan Movie 27"), not episode markers. */
+  titleNumbers: Set<number>;
+}
+
+const YEAR_RE = /(?:^|[\s._[(\-])(19[3-9]\d|20\d{2})(?=[\s._\])\-]|$)/g;
+
+/** Years (1930–2099) a text states as their own token. */
+export function detectYears(text: string): Set<number> {
+  const out = new Set<number>();
+  for (const m of String(text || '').matchAll(YEAR_RE)) out.add(parseInt(m[1], 10));
+  return out;
+}
+
+function titleNumbersOf(titles: string[]): Set<number> {
+  const out = new Set<number>();
+  for (const t of titles) {
+    const years = detectYears(t);
+    for (const m of String(t || '').matchAll(/(?<![\p{L}\d])(\d{1,4})(?![\d])/gu)) {
+      const n = parseInt(m[1], 10);
+      if (!years.has(n)) out.add(n);
+    }
+  }
+  return out;
 }
 
 /**
@@ -175,14 +205,22 @@ export interface TierOptions {
 export async function buildTierContext(opts: TierOptions, facts?: ShowFacts | null): Promise<TierContext> {
   const episode = opts.episode && opts.episode > 0 ? opts.episode : 0;
   const showTokens = tokenSet(opts.titles ?? []);
-  const f = facts !== undefined ? facts : episode > 0 ? await getShowFacts(opts.anilistId) : null;
+  const titles = opts.titles ?? [];
+  const f = facts !== undefined ? facts : await getShowFacts(opts.anilistId);
+  const singleEpisode = !!f && (f.format === 'MOVIE' || f.episodes === 1);
+  const showYears = new Set<number>();
+  for (const t of titles) for (const y of detectYears(t)) showYears.add(y);
+  if (!showYears.size && singleEpisode && f?.startYear) for (const d of [-1, 0, 1]) showYears.add(f.startYear + d);
   return {
     episode,
     candidates: episode > 0 ? episodeCandidates(f, episode, showTokens) : [],
     notAired: episode > 0 && episodeNotAired(f, episode),
     showTokens,
     primaryCount: primaryTokenCount(opts.titles ?? []),
-    arcTokens: arcTokens(opts.titles ?? []),
+    arcTokens: arcTokens(titles),
+    showYears,
+    singleEpisode,
+    titleNumbers: titleNumbersOf(titles),
   };
 }
 
@@ -220,9 +258,31 @@ export function classifyRelease(
     }
   }
 
+  const tiered = classifyEpisode(title, ctx, opts.wanted ?? ctx.candidates);
+  if (!tiered || tiered.tier === 'C' || !ctx.showYears?.size) return tiered;
+  // Dated to another year: the same name, another work (False Memory 2020 vs 2026). Kept only as a guess.
+  const years = detectYears(title);
+  if (years.size && ![...years].some(y => ctx.showYears.has(y))) return { tier: 'C', hit: null };
+  return tiered;
+}
+
+function classifyEpisode(title: string, ctx: TierContext, wanted: number[]): Classified | null {
+  const markers = titleEpisodeMarkers(title).filter(([lo, hi]) => {
+    // A number in the show's own name is not an episode: "Kaiju No. 8 - 10" is episode 10, not a pack 8–10.
+    if (!ctx.titleNumbers?.has(lo)) return true;
+    return lo === hi && wanted.includes(lo);
+  });
+
+  if (ctx.singleEpisode) {
+    if (/\bS\d{1,2}(?:E\d{1,4}|\b)/i.test(title)) return null;
+    if (markers.some(([lo, hi]) => hi > lo || lo > 1)) return null;
+    // "- 01" with no year cannot be told apart from episode 1 of a later series of the same name; it ranks after
+    // the releases that carry the work's year.
+    if (markers.length && ctx.showYears?.size && !detectYears(title).size) return { tier: 'B', hit: null };
+    return { tier: 'A', hit: null };
+  }
+
   if (!(ctx.episode > 0)) return { tier: 'A', hit: null };
-  const wanted = opts.wanted ?? ctx.candidates;
-  const markers = titleEpisodeMarkers(title);
   if (!markers.length) return { tier: 'C', hit: null };
 
   const pack = isPack(title, markers);
