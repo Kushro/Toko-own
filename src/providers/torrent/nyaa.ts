@@ -117,6 +117,14 @@ export function pageCutsEpisode(page: RawRelease[], ctx: TierContext, ep: number
   return oldestExact - oldestOnPage < RELEASE_WAVE_MS;
 }
 
+/** Cut titles whose numbered queries phase 2 runs: two queries each, so at most four extra requests. */
+const CUT_TITLES_MAX = 2;
+
+/** What nyaa matches a query on: its words, case and symbols aside ("Magical★Explorer" = "Magical Explorer"). */
+export function queryKey(q: string): string {
+  return q.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean).join(' ');
+}
+
 const TIER_RANK: Record<Tier, number> = { A: 0, B: 1, C: 2 };
 
 const provider: TorrentProvider = {
@@ -171,11 +179,15 @@ const provider: TorrentProvider = {
 
     // Phase 1: every title as is. The feed's first page holds the newest uploads, which for an airing show already
     // has the episode, and every title is searched because groups split between naming conventions.
-    let cutMidEpisode = false;
+    // Titles whose page ended inside the episode's release wave, in search order: the rest of the wave is under the
+    // name those uploads use, which need not be the first title (the app sends the English one first, Overgeared;
+    // ASW, DKB and Erai-raws name it "Tempal: Item no Chikara").
+    const cutTitles: string[] = [];
     for (const t of titles) {
       const { page, full } = await run(t, t);
-      if (full && pageCutsEpisode(page, ctx, ep)) cutMidEpisode = true;
+      if (full && pageCutsEpisode(page, ctx, ep)) cutTitles.push(t);
     }
+    const cutMidEpisode = cutTitles.length > 0;
 
     // Phase 2: episode-numbered queries, when phase 1 did not reach the episode (an older one fell off the first
     // page) or reached only its newest uploads (a full page that ends inside the episode: the groups that uploaded
@@ -189,8 +201,16 @@ const provider: TorrentProvider = {
         ? [`${t} S${ss}E${pad2(ep)}`, `${t} S${season} - ${pad2(ep)}`, `${t} - ${pad2(ep)}`]
         : [`${t} - ${pad2(ep)}`, `${t} S01E${pad2(ep)}`, `${t} - ${String(ep).padStart(3, '0')}`]);
       if (cutMidEpisode && hasExact()) {
-        // Completing a cut page: the main title under both conventions holds the rest of the episode.
-        for (const q of numbered(titles[0]).slice(0, 2)) await run(q, titles[0]);
+        // Completing a cut page: every cut title under both conventions ("- 05", "S01E05"), at most CUT_TITLES_MAX
+        // titles. Titles nyaa reads alike ("Magical★Explorer", "Magical Explorer") are searched once.
+        const done = new Set<string>();
+        for (const t of cutTitles) {
+          const key = queryKey(t);
+          if (done.has(key)) continue;
+          done.add(key);
+          for (const q of numbered(t).slice(0, 2)) await run(q, t);
+          if (stopped || done.size >= CUT_TITLES_MAX) break;
+        }
       } else {
         for (const t of [...titles, ...aliasTitles(opts.anilistId)]) {
           for (const q of numbered(t)) await run(q, t);

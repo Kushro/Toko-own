@@ -70,13 +70,17 @@ export function showNamePart(title: string): string {
  * A show whose name is one word is satisfied by any release containing it: "Another" matched "In Another World
  * With My Smartphone", "Monster" matched "Monster Musume". For those the filename's show name must not add a
  * significant word the show's titles do not have.
+ *
+ * A name that lists the show under several titles ("装备我最强 / 装备仔 / Tempal: Item no Chikara / Overgeared",
+ * LoliHouse) passes when one of them is the show's own: the other ones are its names in other languages.
  */
 export function nameIntroducesForeignWord(title: string, showTokens: Set<string>): boolean {
-  for (const tok of significantTokens(showNamePart(title))) {
-    if (/^\d+$/.test(tok) || RELEASE_WORDS.has(tok)) continue;
-    if (!showTokens.has(tok)) return true;
-  }
-  return false;
+  const foreign = (name: string) => significantTokens(name)
+    .some(tok => !/^\d+$/.test(tok) && !RELEASE_WORDS.has(tok) && !showTokens.has(tok));
+  const name = showNamePart(title);
+  const parts = name.split(/\s+\/\s+/);
+  if (parts.length < 2) return foreign(name);
+  return !parts.some(part => significantTokens(part).some(tok => showTokens.has(tok)) && !foreign(part));
 }
 
 // ── Episodes ──────────────────────────────────────────────────────────────────

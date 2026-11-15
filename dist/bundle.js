@@ -29580,12 +29580,12 @@ async function fetchEpisodeServers(epHref, language, signal) {
   return servers;
 }
 function buildSearchQueries2(titles) {
-  const queryKey = (t) => t.toLowerCase().replace(/[^a-z0-9àâéèêëîïôùûüç]/g, "").replace(/[.]+$/, "");
+  const queryKey2 = (t) => t.toLowerCase().replace(/[^a-z0-9àâéèêëîïôùûüç]/g, "").replace(/[.]+$/, "");
   const dedup = /* @__PURE__ */ new Set();
   return titles.filter((t) => {
     if (!t || t.length > 50 || t.length < 5) return false;
     if (!SEARCHABLE_TITLE.test(t)) return false;
-    const key = queryKey(t);
+    const key = queryKey2(t);
     if (dedup.has(key)) return false;
     dedup.add(key);
     return true;
@@ -39723,11 +39723,11 @@ function showNamePart(title2) {
   return t.replace(/[._]/g, " ").trim().replace(/[\s:_-]+$/, "");
 }
 function nameIntroducesForeignWord(title2, showTokens) {
-  for (const tok of significantTokens(showNamePart(title2))) {
-    if (/^\d+$/.test(tok) || RELEASE_WORDS.has(tok)) continue;
-    if (!showTokens.has(tok)) return true;
-  }
-  return false;
+  const foreign = (name2) => significantTokens(name2).some((tok) => !/^\d+$/.test(tok) && !RELEASE_WORDS.has(tok) && !showTokens.has(tok));
+  const name = showNamePart(title2);
+  const parts = name.split(/\s+\/\s+/);
+  if (parts.length < 2) return foreign(name);
+  return !parts.some((part) => significantTokens(part).some((tok) => showTokens.has(tok)) && !foreign(part));
 }
 function titleEpisodeMarkers(title2) {
   const out = [];
@@ -40109,6 +40109,10 @@ function pageCutsEpisode(page, ctx, ep) {
   if (!(oldestExact > 0) || !(oldestOnPage > 0)) return true;
   return oldestExact - oldestOnPage < RELEASE_WAVE_MS;
 }
+var CUT_TITLES_MAX = 2;
+function queryKey(q) {
+  return q.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean).join(" ");
+}
 var TIER_RANK = { A: 0, B: 1, C: 2 };
 var provider23 = {
   name: "nyaa",
@@ -40153,16 +40157,24 @@ var provider23 = {
       return true;
     });
     const hasExact = () => select2().some((p) => p.tier === "A");
-    let cutMidEpisode = false;
+    const cutTitles = [];
     for (const t of titles) {
       const { page, full } = await run(t, t);
-      if (full && pageCutsEpisode(page, ctx, ep)) cutMidEpisode = true;
+      if (full && pageCutsEpisode(page, ctx, ep)) cutTitles.push(t);
     }
+    const cutMidEpisode = cutTitles.length > 0;
     if (ep > 0 && !ctx.notAired && (cutMidEpisode || !hasExact())) {
       const ss = season ? pad2(season) : "";
       const numbered = (t) => season && season > 1 ? [`${t} S${ss}E${pad2(ep)}`, `${t} S${season} - ${pad2(ep)}`, `${t} - ${pad2(ep)}`] : [`${t} - ${pad2(ep)}`, `${t} S01E${pad2(ep)}`, `${t} - ${String(ep).padStart(3, "0")}`];
       if (cutMidEpisode && hasExact()) {
-        for (const q of numbered(titles[0]).slice(0, 2)) await run(q, titles[0]);
+        const done = /* @__PURE__ */ new Set();
+        for (const t of cutTitles) {
+          const key = queryKey(t);
+          if (done.has(key)) continue;
+          done.add(key);
+          for (const q of numbered(t).slice(0, 2)) await run(q, t);
+          if (stopped || done.size >= CUT_TITLES_MAX) break;
+        }
       } else {
         for (const t of [...titles, ...aliasTitles(opts.anilistId)]) {
           for (const q of numbered(t)) await run(q, t);

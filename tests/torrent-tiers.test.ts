@@ -53,6 +53,18 @@ test('a one-word show does not take a release that adds words', () => {
   expect(classifyRelease('[Group] Another - 03 [1080p]', ctx, { matchTitle: 'Another' })?.tier).toBe('A');
 });
 
+test('a release listing the show under several titles passes on the one it shares (LoliHouse, Overgeared 04)', () => {
+  const lh = '[LoliHouse] 装备我最强 / 装备仔 / Tempal: Item no Chikara / Overgeared - 04 [WebRip 1080p HEVC-10bit AAC][简繁内封字幕]';
+  // The app sends the English title first: "Overgeared" is one word, so the foreign-word guard applies.
+  const ctx = ctxFor(['Overgeared', 'テムパル～アイテムの力～', 'Tempal: Item no Chikara'], 4);
+  expect(nameIntroducesForeignWord(lh, ctx.showTokens)).toBe(false);
+  expect(classifyRelease(lh, ctx, { matchTitle: 'Overgeared' })?.tier).toBe('A');
+  // Every listed title another show's: still out.
+  const another = ctxFor(['Another'], 3);
+  expect(nameIntroducesForeignWord('[LoliHouse] 异世界 / In Another World With My Smartphone - 03 [1080p]', another.showTokens)).toBe(true);
+  expect(classifyRelease('[LoliHouse] 异世界 / In Another World With My Smartphone - 03 [1080p]', another, { matchTitle: 'Another' })).toBeNull();
+});
+
 test('tiers: exact, covering pack, unlabelled, other episode', () => {
   const ctx = ctxFor(['Sousou no Frieren', "Frieren: Beyond Journey's End"], 8);
   const opt = { matchTitle: 'Sousou no Frieren' };

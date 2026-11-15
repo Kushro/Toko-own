@@ -1,5 +1,15 @@
 # Changelog
 
+## 4.6.2 - 2026-11-15 (Kushro/Toko-own)
+
+- Nyaa: the numbered queries that complete a cut first page now run for every title whose page was cut (at most
+  two; titles nyaa reads alike, like "Magical★Explorer" and "Magical Explorer", once), not only the first title.
+  The app sends the English title first, and Overgeared 04's cut page was the romaji one ("Tempal: Item no
+  Chikara"): ASW, DKB and three of the four Erai-raws were missing.
+- Torrent matching: a release that names the show under several titles ("装备我最强 / 装备仔 / Tempal: Item no
+  Chikara / Overgeared - 04", LoliHouse; ANi) passes the one-word-show and sibling-arc checks when one of those
+  titles is the show's own. LoliHouse (Overgeared, Magical Explorer) and ANi (Magical Explorer) were dropped.
+
 ## 4.6.1 - 2026-11-14 (Kushro/Toko-own)
 
 - Nyaa: a full first page that ends inside the episode's release wave (its oldest exact release is less than two

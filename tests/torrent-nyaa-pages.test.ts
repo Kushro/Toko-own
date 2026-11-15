@@ -1,11 +1,12 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
-import nyaa, { pageCutsEpisode, type RawRelease } from '../src/providers/torrent/nyaa';
+import nyaa, { pageCutsEpisode, queryKey, type RawRelease } from '../src/providers/torrent/nyaa';
 import { buildTierContext } from '../src/utils/torrent/tiers';
 
-// Real nyaa feeds (2026-11-14) for every query the provider makes for Magical Explorer 05 / 06 and Overgeared 04,
-// plus the AniList answers its tier context reads. Page 1 of "Magical Explorer" ends inside the ep. 05/06 release
-// wave: Judas, Erai-raws, ASW and SubsPlease are only on page 2 and in the numbered queries.
+// Real nyaa feeds (2026-11-15) for every query the provider makes for Magical Explorer 05 / 06 and Overgeared 04,
+// in both title orders, plus the AniList answers its tier context reads. Page 1 of "Magical Explorer" ends inside the
+// ep. 05/06 release wave: Judas, Erai-raws, ASW and SubsPlease are only on page 2 and in the numbered queries. Page 1
+// of "Tempal: Item no Chikara" ends inside the ep. 04 wave: ASW, DKB and three Erai-raws are past it.
 interface FixtureItem { title: string; pubDate?: string; infoHash?: string; seeders: number }
 const fixture = JSON.parse(readFileSync(new URL('./fixtures/nyaa-magical-explorer-overgeared.json', import.meta.url), 'utf8')) as {
   nyaa: Record<string, FixtureItem[]>;
@@ -36,6 +37,11 @@ afterAll(() => { globalThis.fetch = realFetch; });
 const ME = ['Magical★Explorer: Eroge no Yuujin Chara ni Tensei Shitakedo, Game Chishiki Tsukatte Jiyuu ni Ikiru', 'Magical Explorer',
   'マジカル★エクスプローラー　エロゲの友人キャラに転生したけど、ゲーム知識使って自由に生きる', 'Magical Explorer: Reborn as a Side Character in a Fantasy Dating Sim', 'Majieku'];
 const OG = ['Tempal: Item no Chikara', 'Overgeared', 'テムパル～アイテムの力～', '템빨', 'Temppal', 'Tempal - Item no Chikara'];
+// What the desktop app sends (torrent_play.rs `titles`): the shown (English) title, then english / native / romaji.
+const ME_APP = ['Magical Explorer: Reborn as a Side Character in a Fantasy Dating Sim',
+  'マジカル★エクスプローラー　エロゲの友人キャラに転生したけど、ゲーム知識使って自由に生きる',
+  'Magical★Explorer: Eroge no Yuujin Chara ni Tensei Shitakedo, Game Chishiki Tsukatte Jiyuu ni Ikiru'];
+const OG_APP = ['Overgeared', 'テムパル～アイテムの力～', 'Tempal: Item no Chikara'];
 
 async function run(anilistId: number, titles: string[], episode: number) {
   queries.length = 0;
@@ -64,8 +70,42 @@ test('Magical Explorer 06 (same day as 05) keeps ASW and gains the groups past p
 
 test('Overgeared 04 lists the groups that use the romaji title', async () => {
   const { titles } = await run(212888, OG, 4);
-  for (const g of ['ASW', 'Erai-raws', 'Judas', 'SubsPlease', 'ToonsHub']) expect(hasGroup(titles, g)).toBe(true);
+  for (const g of ['ASW', 'DKB', 'LoliHouse', 'Erai-raws', 'Judas', 'SubsPlease', 'ToonsHub']) expect(hasGroup(titles, g)).toBe(true);
+  expect(titles.filter(t => t.startsWith('[Erai-raws]')).length).toBe(4);
   expect(titles.every(t => /(?:- 0?4\b|E04\b)/.test(t))).toBe(true);
+});
+
+// BUG-141: the app sends the English title first. The page cut inside episode 04 is the romaji one's, so its
+// numbered queries are the ones that reach ASW, DKB and the other Erai-raws, not "Overgeared - 04".
+test('Overgeared 04 in the app order (English first) completes the cut romaji page', async () => {
+  const { titles, queries } = await run(212888, OG_APP, 4);
+  for (const g of ['ASW', 'DKB', 'LoliHouse', 'Erai-raws', 'Judas', 'SubsPlease', 'ToonsHub', 'Anime Time']) expect(hasGroup(titles, g)).toBe(true);
+  expect(titles.filter(t => t.startsWith('[Erai-raws]')).length).toBe(4);
+  expect(queries).toContain('Tempal: Item no Chikara - 04');
+  expect(queries).toContain('Tempal: Item no Chikara S01E04');
+  expect(queries).not.toContain('Overgeared - 04');
+  // Three phase-1 titles, then two queries for each of at most two cut titles.
+  expect(queries.length).toBeLessThanOrEqual(7);
+  expect(titles.every(t => /(?:- 0?4\b|E04\b)/.test(t))).toBe(true);
+});
+
+test('Magical Explorer 05 / 06 in the app order keep every group and search "Magical★Explorer" once', async () => {
+  for (const ep of [5, 6]) {
+    const { titles, queries } = await run(169581, ME_APP, ep);
+    for (const g of ['ASW', 'Erai-raws', 'Judas', 'SubsPlease', 'ToonsHub', 'AnoZu', 'Yameii', 'LoliHouse']) expect(hasGroup(titles, g)).toBe(true);
+    expect(titles.filter(t => t.startsWith('[Erai-raws]')).length).toBe(4);
+    expect(queries).toContain(`Magical Explorer - 0${ep}`);
+    expect(queries).toContain(`Magical Explorer S01E0${ep}`);
+    expect(queries.some(q => q.startsWith('Magical★Explorer -') || q.startsWith('Magical★Explorer S'))).toBe(false);
+    expect(queries.length).toBe(5);
+    expect(titles.every(t => new RegExp(`(?:- 0?${ep}\\b|E0${ep}\\b)`).test(t))).toBe(true);
+  }
+});
+
+test('queryKey reads a query the way nyaa matches it', () => {
+  expect(queryKey('Magical★Explorer')).toBe(queryKey('Magical Explorer'));
+  expect(queryKey('Tempal: Item no Chikara')).toBe('tempal item no chikara');
+  expect(queryKey('Tempal')).not.toBe(queryKey('Tempal: Item no Chikara'));
 });
 
 const rel = (title: string, hoursAgo: number): RawRelease => ({
