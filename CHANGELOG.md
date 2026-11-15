@@ -1,5 +1,14 @@
 # Changelog
 
+## 4.6.1 - 2026-11-14 (Kushro/Toko-own)
+
+- Nyaa: a full first page that ends inside the episode's release wave (its oldest exact release is less than two
+  days newer than the page's oldest item) also runs the numbered queries. Magical Explorer 05 had only the newest
+  uploads on page 1 (ToonsHub, AnoZu) and skipped Judas, Erai-raws, ASW and SubsPlease, which were on page 2;
+  Overgeared 04 and Magical Explorer 06 (out the same day as 05) gain the same groups.
+- Nyaa's numbered queries for season 1 are "Title - 05" and "Title S01E05" (nyaa ignores a lone "-", so the old
+  "Title 05" repeated the first one and the "S01E05" groups, like Judas, were never searched).
+
 ## 4.6.0 - 2026-11-11 (Kushro/Toko-own)
 
 Torrent matching, with ideas taken from anitorrent (reimplemented, no code copied).

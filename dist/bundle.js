@@ -40097,6 +40097,18 @@ function parseItem(item, animeTitle) {
   };
 }
 var pad2 = (n) => String(n).padStart(2, "0");
+var FEED_PAGE_SIZE = 75;
+var RELEASE_WAVE_MS = 48 * 60 * 60 * 1e3;
+function pageCutsEpisode(page, ctx, ep) {
+  if (!(ep > 0) || ctx.notAired || !page.length) return false;
+  const inputs = page.map((r) => ({ item: r, title: r.torrentTitle, publishedAt: r.publishedAt, matchTitle: r.animeTitle }));
+  const exact = selectByTier(inputs, ctx).filter((p) => p.tier === "A").map((p) => p.item.publishedAt);
+  if (!exact.length) return false;
+  const oldestExact = Math.min(...exact);
+  const oldestOnPage = Math.min(...page.map((r) => r.publishedAt));
+  if (!(oldestExact > 0) || !(oldestOnPage > 0)) return true;
+  return oldestExact - oldestOnPage < RELEASE_WAVE_MS;
+}
 var TIER_RANK = { A: 0, B: 1, C: 2 };
 var provider23 = {
   name: "nyaa",
@@ -40112,21 +40124,24 @@ var provider23 = {
     let stopped = null;
     let lastStatus = "ok";
     const run = async (query, animeTitle) => {
-      if (stopped) return;
+      if (stopped) return { page: [], full: false };
       const { items, status } = await fetchRssItems(query);
       lastStatus = status;
       if (status === "limited") {
         stopped = status;
-        return;
+        return { page: [], full: false };
       }
+      const page = [];
       for (const item of items) {
         const r = parseItem(item, animeTitle);
         if (!r) continue;
+        page.push(r);
         const key = r.infoHash.toLowerCase() || r.torrentTitle;
         if (seen.has(key)) continue;
         seen.add(key);
         raw.push(r);
       }
+      return { page, full: items.length >= FEED_PAGE_SIZE };
     };
     const select2 = () => selectByTier(
       raw.filter((r) => !hitsExclusion(r.torrentTitle, opts.exclusions)).map((r) => ({ item: r, title: r.torrentTitle, publishedAt: r.publishedAt, matchTitle: r.animeTitle })),
@@ -40138,13 +40153,21 @@ var provider23 = {
       return true;
     });
     const hasExact = () => select2().some((p) => p.tier === "A");
-    for (const t of titles) await run(t, t);
-    if (ep > 0 && !ctx.notAired && !hasExact()) {
+    let cutMidEpisode = false;
+    for (const t of titles) {
+      const { page, full } = await run(t, t);
+      if (full && pageCutsEpisode(page, ctx, ep)) cutMidEpisode = true;
+    }
+    if (ep > 0 && !ctx.notAired && (cutMidEpisode || !hasExact())) {
       const ss = season ? pad2(season) : "";
-      const numbered = (t) => season && season > 1 ? [`${t} S${ss}E${pad2(ep)}`, `${t} S${season} - ${pad2(ep)}`, `${t} - ${pad2(ep)}`] : [`${t} - ${pad2(ep)}`, `${t} ${pad2(ep)}`, `${t} - ${String(ep).padStart(3, "0")}`];
-      for (const t of [...titles, ...aliasTitles(opts.anilistId)]) {
-        for (const q of numbered(t)) await run(q, t);
-        if (stopped || hasExact()) break;
+      const numbered = (t) => season && season > 1 ? [`${t} S${ss}E${pad2(ep)}`, `${t} S${season} - ${pad2(ep)}`, `${t} - ${pad2(ep)}`] : [`${t} - ${pad2(ep)}`, `${t} S01E${pad2(ep)}`, `${t} - ${String(ep).padStart(3, "0")}`];
+      if (cutMidEpisode && hasExact()) {
+        for (const q of numbered(titles[0]).slice(0, 2)) await run(q, titles[0]);
+      } else {
+        for (const t of [...titles, ...aliasTitles(opts.anilistId)]) {
+          for (const q of numbered(t)) await run(q, t);
+          if (stopped || hasExact()) break;
+        }
       }
     }
     if (ep > 0 && !ctx.notAired && ctx.candidates.length > 1 && !hasExact()) {

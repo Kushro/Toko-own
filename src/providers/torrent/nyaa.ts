@@ -5,7 +5,7 @@ import { normalizeQuality } from '../../utils/scraping/quality.js';
 import type { TorrentProvider, SourceOptions, SourceResult } from '../../types/index.js';
 import { fetchResponse } from '../../utils/http/fetch.js';
 import { scoreTitleMatch, scoreTorrentResult, buildMagnet } from '../../utils/torrent/matcher.js';
-import { buildTierContext, capByTier, selectByTier, type Tier } from '../../utils/torrent/tiers.js';
+import { buildTierContext, capByTier, selectByTier, type Tier, type TierContext } from '../../utils/torrent/tiers.js';
 import { hitsExclusion, matchesResolution } from '../../utils/torrent/preferences.js';
 import { aliasTitles, searchTitles, seasonOf, stripSeason, releaseSeason, seasonMismatch } from '../../utils/torrent/search-titles.js';
 
@@ -39,7 +39,7 @@ async function fetchRssItems(query: string): Promise<{ items: string[]; status: 
   return { items: [], status };
 }
 
-interface RawRelease {
+export interface RawRelease {
   animeTitle: string;
   torrentTitle: string;
   torrentUrl: string;
@@ -92,6 +92,31 @@ function parseItem(item: string, animeTitle: string): RawRelease | null {
 }
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
+
+/** Items nyaa's RSS returns per page; a feed this long may have older uploads it did not show. */
+const FEED_PAGE_SIZE = 75;
+
+/** How long a group's first upload of an episode trails the others at most: the release wave after it airs. */
+const RELEASE_WAVE_MS = 48 * 60 * 60 * 1000;
+
+/**
+ * A full feed page (newest first) that ends inside the requested episode's release wave: the groups that uploaded
+ * it first fell onto page 2 (Magical Explorer 05: ToonsHub and AnoZu at the end of page 1, Judas, Erai-raws and ASW
+ * on page 2). The page holds the whole wave only when it reaches back well before its oldest exact release; an
+ * episode number of the release before does not tell, since two episodes may come out the same day (ME 05 and 06).
+ */
+export function pageCutsEpisode(page: RawRelease[], ctx: TierContext, ep: number): boolean {
+  if (!(ep > 0) || ctx.notAired || !page.length) return false;
+  const inputs = page.map(r => ({ item: r, title: r.torrentTitle, publishedAt: r.publishedAt, matchTitle: r.animeTitle }));
+  const exact = selectByTier(inputs, ctx).filter(p => p.tier === 'A').map(p => p.item.publishedAt);
+  if (!exact.length) return false;
+  const oldestExact = Math.min(...exact);
+  const oldestOnPage = Math.min(...page.map(r => r.publishedAt));
+  // No dates to go by: assume the worst, it only costs the numbered queries.
+  if (!(oldestExact > 0) || !(oldestOnPage > 0)) return true;
+  return oldestExact - oldestOnPage < RELEASE_WAVE_MS;
+}
+
 const TIER_RANK: Record<Tier, number> = { A: 0, B: 1, C: 2 };
 
 const provider: TorrentProvider = {
@@ -109,20 +134,24 @@ const provider: TorrentProvider = {
     const raw: RawRelease[] = [];
     let stopped = null as FeedStatus | null;
     let lastStatus = 'ok' as FeedStatus;
-    const run = async (query: string, animeTitle: string) => {
-      if (stopped) return;
+    /** Every release a feed returned (repeats included) and whether it was a full page, so older ones may exist. */
+    const run = async (query: string, animeTitle: string): Promise<{ page: RawRelease[]; full: boolean }> => {
+      if (stopped) return { page: [], full: false };
       const { items, status } = await fetchRssItems(query);
       lastStatus = status;
       // A rate limit is per IP and lasts about a minute: every further query would only extend it.
-      if (status === 'limited') { stopped = status; return; }
+      if (status === 'limited') { stopped = status; return { page: [], full: false }; }
+      const page: RawRelease[] = [];
       for (const item of items) {
         const r = parseItem(item, animeTitle);
         if (!r) continue;
+        page.push(r);
         const key = r.infoHash.toLowerCase() || r.torrentTitle;
         if (seen.has(key)) continue;
         seen.add(key);
         raw.push(r);
       }
+      return { page, full: items.length >= FEED_PAGE_SIZE };
     };
     const select = () => selectByTier(
       raw
@@ -142,19 +171,31 @@ const provider: TorrentProvider = {
 
     // Phase 1: every title as is. The feed's first page holds the newest uploads, which for an airing show already
     // has the episode, and every title is searched because groups split between naming conventions.
-    for (const t of titles) await run(t, t);
+    let cutMidEpisode = false;
+    for (const t of titles) {
+      const { page, full } = await run(t, t);
+      if (full && pageCutsEpisode(page, ctx, ep)) cutMidEpisode = true;
+    }
 
-    // Phase 2: episode-numbered queries, only when phase 1 did not reach the episode (an older one fell off the
-    // first page). One title's set at a time; the first title whose set finds it ends the phase.
+    // Phase 2: episode-numbered queries, when phase 1 did not reach the episode (an older one fell off the first
+    // page) or reached only its newest uploads (a full page that ends inside the episode: the groups that uploaded
+    // it first are on page 2). One title's set at a time; the first title whose set finds it ends the phase.
     // An episode that has not aired can only be a fresh upload, which phase 1 already sees.
-    if (ep > 0 && !ctx.notAired && !hasExact()) {
+    if (ep > 0 && !ctx.notAired && (cutMidEpisode || !hasExact())) {
       const ss = season ? pad2(season) : '';
+      // nyaa ignores a lone "-", so "Title - 05" also covers "Title 05"; "S01E05" is the other naming convention
+      // (Judas, ToonsHub, VARYG), which "- 05" does not match.
       const numbered = (t: string) => (season && season > 1
         ? [`${t} S${ss}E${pad2(ep)}`, `${t} S${season} - ${pad2(ep)}`, `${t} - ${pad2(ep)}`]
-        : [`${t} - ${pad2(ep)}`, `${t} ${pad2(ep)}`, `${t} - ${String(ep).padStart(3, '0')}`]);
-      for (const t of [...titles, ...aliasTitles(opts.anilistId)]) {
-        for (const q of numbered(t)) await run(q, t);
-        if (stopped || hasExact()) break;
+        : [`${t} - ${pad2(ep)}`, `${t} S01E${pad2(ep)}`, `${t} - ${String(ep).padStart(3, '0')}`]);
+      if (cutMidEpisode && hasExact()) {
+        // Completing a cut page: the main title under both conventions holds the rest of the episode.
+        for (const q of numbered(titles[0]).slice(0, 2)) await run(q, titles[0]);
+      } else {
+        for (const t of [...titles, ...aliasTitles(opts.anilistId)]) {
+          for (const q of numbered(t)) await run(q, t);
+          if (stopped || hasExact()) break;
+        }
       }
     }
 
